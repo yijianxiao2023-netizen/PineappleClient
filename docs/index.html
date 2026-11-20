@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Iron Dawn: 1936 · Grand Strategy</title>
+<meta name="description" content="A grand strategy game of Europe in 1936. Lead a nation, build factories, research technology, raise armies and wage war. Every match plays out differently.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='4' fill='%23222'/><path d='M6 22h20M8 22V12l8-5 8 5v10' stroke='%23d9b45a' stroke-width='3' fill='none'/></svg>">
+</head>
+<body>
+<canvas id="map"></canvas>
+
+<div id="start" class="screen">
+  <div class="start-inner">
+    <div class="title">
+      <div class="kicker">Grand Strategy</div>
+      <h1>IRON DAWN<span>1936</span></h1>
+      <p>Europe stands on the edge of war. The alliances are set. What happens next is up to you, and it's different every game.</p>
+    </div>
+    <div class="pick">
+      <h2>Choose your nation</h2>
+      <div id="majors" class="majors"></div>
+      <details class="minors-wrap"><summary>Play as a smaller nation</summary><div id="minors" class="minors"></div></details>
+    </div>
+    <div class="start-foot">
+      <div id="pickInfo" class="pick-info">Select a nation to begin.</div>
+      <button id="startBtn" class="btn gold" disabled>Begin 1936</button>
+    </div>
+  </div>
+</div>
+
+<div id="hud" class="hidden">
+  <header id="topbar">
+    <div class="nation" id="tbNation"></div>
+    <div class="res" id="tbRes"></div>
+    <div class="clock">
+      <div id="tbDate" class="date"></div>
+      <div class="speeds" id="speeds"></div>
+    </div>
+  </header>
+
+  <nav id="sidebar">
+    <button data-tab="focus" title="National Focus (F)"><b>F</b><span>Focus</span></button>
+    <button data-tab="research" title="Research (R)"><b>R</b><span>Research</span></button>
+    <button data-tab="production" title="Production &amp; Construction (P)"><b>P</b><span>Industry</span></button>
+    <button data-tab="army" title="Army (A)"><b>A</b><span>Army</span></button>
+    <button data-tab="diplomacy" title="Diplomacy (D)"><b>D</b><span>Diplomacy</span></button>
+    <div class="sep"></div>
+    <button id="modeBtn" title="Toggle map mode (M)"><b>M</b><span>Map</span></button>
+    <button data-tab="help" title="How to play (H)"><b>?</b><span>Help</span></button>
+  </nav>
+
+  <aside id="panel" class="hidden">
+    <div class="panel-head"><h3 id="panelTitle"></h3><button class="x" id="panelClose">×</button></div>
+    <div id="panelBody" class="panel-body"></div>
+  </aside>
+
+  <aside id="info" class="hidden"></aside>
+  <div id="log"></div>
+  <div id="toasts"></div>
+  <div id="buildHint" class="hidden"></div>
+</div>
+
+<div id="modal" class="screen hidden"><div class="modal-card" id="modalCard"></div></div>
+<div id="tip" class="hidden"></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
