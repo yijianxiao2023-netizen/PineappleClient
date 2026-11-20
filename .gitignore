@@ -1,0 +1,13 @@
+.gradle/
+build/
+out/
+run/
+*.iml
+.idea/
+.vscode/
+__pycache__/
+*.pyc
+launcher/mods/*.jar
+.DS_Store
+dist/
+docs/downloads/*.dmg
