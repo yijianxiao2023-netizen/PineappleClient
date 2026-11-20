@@ -164,8 +164,8 @@ export class MapView {
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.drawLabels();
     this.drawCities();
-    this.drawPaths();
     this.drawUnits();
+    this.drawPaths();
     this.drawBattles();
     if (this.box) {
       const { x0, y0, x1, y1 } = this.box;
@@ -214,22 +214,58 @@ export class MapView {
   }
 
   drawPaths() {
-    const ctx = this.ctx, g = this.g;
-    const drawn = new Set();
+    const ctx = this.ctx, g = this.g, frac = this.frac || 0;
+    const seen = new Set();
+    const list = [];
     for (const d of g.divs.values()) {
       if (!d.path.length || d.tag !== g.player) continue;
-      if (d.domain !== "land" && !this.selected.has(d.id)) continue;
-      const key = d.prov + ">" + d.path[d.path.length - 1].id;
+      const key = d.prov + ":" + d.path.map(s => s.id).join(",");
+      if (seen.has(key)) continue; seen.add(key);
+      list.push(d);
+    }
+    list.sort((a, b) => (this.selected.has(a.id) ? 1 : 0) - (this.selected.has(b.id) ? 1 : 0));
+    for (const d of list) {
       const sel = this.selected.has(d.id);
-      if (drawn.has(key + sel)) continue; drawn.add(key + sel);
       const pts = [g.P[d.prov].c, ...d.path.map(s => g.P[s.id].c)].map(c => this.toScreen(c[0], c[1]));
-      ctx.strokeStyle = sel ? "rgba(255,226,122,0.95)" : "rgba(120,220,120,0.75)";
-      ctx.lineWidth = sel ? 3 : 2; ctx.setLineDash(d.attacking != null ? [6, 4] : []);
-      ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke(); ctx.setLineDash([]);
-      const [ax, ay] = pts[pts.length - 1], [bx, by] = pts[pts.length - 2];
-      const ang = Math.atan2(ay - by, ax - bx);
-      ctx.fillStyle = ctx.strokeStyle; ctx.beginPath(); ctx.moveTo(ax, ay);
-      ctx.lineTo(ax - 10 * Math.cos(ang - 0.45), ay - 10 * Math.sin(ang - 0.45)); ctx.lineTo(ax - 10 * Math.cos(ang + 0.45), ay - 10 * Math.sin(ang + 0.45)); ctx.fill();
+      const leg = g.legHours(d, d.prov, d.path[0].id, d.path[0].sea);
+      const done0 = d.attacking != null ? 0 : Math.max(0, Math.min(1, (d.prog + frac) / leg));
+      const fillCol = d.attacking != null ? "#ff5a48" : sel ? "#ffe27a" : "#8be07a";
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
+        const len = Math.hypot(bx - ax, by - ay);
+        if (len < 4) continue;
+        const ux = (bx - ax) / len, uy = (by - ay) / len;
+        const gap = Math.min(7, len * 0.15);
+        const sx = ax + ux * gap, sy = ay + uy * gap, ex = bx - ux * gap, ey = by - uy * gap;
+        const segLen = Math.hypot(ex - sx, ey - sy);
+        const head = Math.min(14, segLen * 0.45), shaft = Math.max(0, segLen - head);
+        const hx = sx + ux * shaft, hy = sy + uy * shaft;
+        const nx = -uy, ny = ux, w = 4.2, hw = 9.5;
+        const arrow = () => {
+          ctx.beginPath();
+          ctx.moveTo(sx + nx * w, sy + ny * w); ctx.lineTo(hx + nx * w, hy + ny * w); ctx.lineTo(hx + nx * hw, hy + ny * hw);
+          ctx.lineTo(ex, ey);
+          ctx.lineTo(hx - nx * hw, hy - ny * hw); ctx.lineTo(hx - nx * w, hy - ny * w); ctx.lineTo(sx - nx * w, sy - ny * w); ctx.closePath();
+        };
+        arrow();
+        ctx.fillStyle = "rgba(10,12,16,0.55)"; ctx.fill();
+        ctx.lineWidth = 1.2; ctx.strokeStyle = sel ? "rgba(255,226,122,0.9)" : "rgba(230,230,230,0.55)"; ctx.stroke();
+        const f = i === 0 ? done0 : 0;
+        if (f > 0) {
+          const cut = segLen * f;
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(sx - nx * 20, sy - ny * 20); ctx.lineTo(sx + nx * 20, sy + ny * 20);
+          ctx.lineTo(sx + ux * cut + nx * 20, sy + uy * cut + ny * 20); ctx.lineTo(sx + ux * cut - nx * 20, sy + uy * cut - ny * 20); ctx.closePath();
+          ctx.clip();
+          arrow(); ctx.fillStyle = fillCol; ctx.fill();
+          ctx.restore();
+        }
+        if (i === 0 && d.attacking != null) {
+          ctx.font = "700 10px Inter, system-ui, sans-serif"; ctx.fillStyle = "#ff6a58"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+          ctx.fillText("ATTACKING", (sx + ex) / 2, (sy + ey) / 2 - 8);
+        }
+      }
     }
   }
 

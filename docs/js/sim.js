@@ -311,7 +311,11 @@ export class Game {
       if (d.prov === target) { d.path = []; d.attacking = null; d.prog = 0; ok++; continue; }
       if (d.domain === "air") {
         if (!this.friendly(d.tag, this.P[target].ctrl)) continue;
-        d.path = [{ id: target, sea: false }]; d.prog = 0; ok++; continue;
+        const prev = new Map([[d.prov, -1]]), q = [d.prov];
+        while (q.length && !prev.has(target)) { const id = q.shift(); for (const n of [...this.P[id].adj, ...this.P[id].sea]) if (!prev.has(n)) { prev.set(n, id); q.push(n); } }
+        if (!prev.has(target)) continue;
+        const path = []; for (let cur = target; cur !== d.prov; cur = prev.get(cur)) path.unshift({ id: cur, sea: false });
+        d.path = path; d.prog = 0; ok++; continue;
       }
       if (d.domain === "sea") {
         const sp = this.findSeaPath(d.tag, d.prov, target);
@@ -411,8 +415,8 @@ export class Game {
         if (d.prog >= this.legHours(d, d.prov, step.id, false)) {
           d.prog = 0; d.path.shift();
           const q = this.P[step.id];
-          if (d.domain === "air" && !this.friendly(d.tag, q.ctrl)) { d.path = []; continue; }
           this.moveDivTo(d, step.id);
+          if (d.domain === "air" && !d.path.length && !this.friendly(d.tag, q.ctrl)) this.rebase(d);
         }
         continue;
       }

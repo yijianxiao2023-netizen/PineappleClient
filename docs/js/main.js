@@ -273,7 +273,7 @@ function renderArmy() {
     <button class="btn" data-act="selidle">Select idle land units</button>
     <button class="btn" data-act="selair">Select all aircraft</button>
     <button class="btn" data-act="selships">Select all fleets</button>
-  </div><p class="muted" style="line-height:1.5">Click a counter to select it, or Shift-drag to box-select. Then <b>right-click</b> a province to move or attack. Aircraft fly to any friendly province and support battles within the dashed circle. Fleets sail between friendly ports.</p></div>`;
+  </div><p class="muted" style="line-height:1.5">Click a counter to select it, or Shift-drag to box-select. Then <b>click</b> (or right-click) a province to move or attack. Aircraft fly to any friendly province and support battles within the dashed circle. Fleets sail between friendly ports.</p></div>`;
 }
 
 function renderDiplomacy() {
@@ -312,8 +312,8 @@ function renderHelp() {
   <h4>Controls</h4><ul>
     <li><kbd>Space</kbd> pause or unpause, <kbd>1</kbd>–<kbd>5</kbd> game speed.</li>
     <li>Drag to pan, scroll to zoom. The arrow keys also pan.</li>
-    <li>Click a division counter to select it. <kbd>Shift</kbd>-click adds more, <kbd>Shift</kbd>-drag box-selects.</li>
-    <li><b>Right-click</b> a province to move or attack with the selected divisions. Paths go around neutral countries.</li>
+    <li><b>Click a unit</b> to select it, then <b>click a province</b> to send it there. Right-click works too. <kbd>Shift</kbd>-click adds more units, <kbd>Shift</kbd>-drag box-selects, and clicking the sea deselects.</li>
+    <li>The route shows one arrow per province. Each arrow fills up as the unit crosses that province, so no province can be skipped. Red arrows mean the unit is attacking.</li>
     <li><kbd>F</kbd> Focus · <kbd>R</kbd> Research · <kbd>P</kbd> Industry · <kbd>A</kbd> Army · <kbd>D</kbd> Diplomacy · <kbd>M</kbd> map mode · <kbd>Esc</kbd> deselect.</li></ul>
   <h4>Units</h4><ul>
     ${UNIT_ORDER.map(t => `<li style="list-style:none;margin-left:-18px;display:flex;gap:8px;align-items:center">${icon(t, 22)}<span><b>${UNIT[t].name}</b>: ${esc(UNIT[t].desc)}</span></li>`).join("")}
@@ -434,19 +434,20 @@ function showDivInfo() {
   ${land.length ? `<div class="kv"><span class="k">Strength</span><span>${avg(land, "str")}%</span><span class="k">Organization</span><span>${avg(land, "org")}%</span>
   <span class="k">Supply</span><span>${land.every(d => sup.has(d.prov)) ? "Supplied" : '<b style="color:#ff8a7a">Some out of supply</b>'}</span></div>` : ""}
   <div style="margin-top:8px">${rows}${ds.length > 14 ? `<div class="muted">…and ${ds.length - 14} more</div>` : ""}</div>
-  <div class="muted" style="margin-top:8px">Right-click a province to move${land.length ? " or attack" : ""}.${ds.some(d => d.domain === "air") ? " Aircraft can only fly to friendly provinces." : ""}${ds.some(d => d.domain === "sea") ? " Fleets can only dock in friendly coastal provinces." : ""}</div>
+  <div class="muted" style="margin-top:8px">Click a province to move${land.length ? " or attack" : ""}.${ds.some(d => d.domain === "air") ? " Aircraft can only fly to friendly provinces." : ""}${ds.some(d => d.domain === "sea") ? " Fleets can only dock in friendly coastal provinces." : ""}</div>
   <div class="acts"><button class="btn sm" data-act="stop">Stop</button><button class="btn sm" data-act="desel">Deselect</button></div>`;
   infoDay = Math.floor(game.hourCount / 24);
   view.dirty = true;
 }
 
 function moveSelected(p) {
-  if (!view.selected.size || !p) return;
+  if (!view.selected.size || !p) return 0;
   const n = game.orderMove([...view.selected], p.id);
   if (!n) toast(view.selected.size && [...view.selected].every(i => game.divs.get(i)?.domain === "sea") ? "Fleets can only sail to friendly coastal provinces." : [...view.selected].every(i => game.divs.get(i)?.domain === "air") ? "Aircraft can only fly to friendly provinces." : "No route there. You can't enter neutral countries.");
   else if (game.atWar(player, p.ctrl)) toast(`${n} division${n > 1 ? "s" : ""} attacking ${p.name}`);
   view.dirty = true;
   showDivInfo();
+  return n;
 }
 
 let down = null, pointers = new Map(), pinch = null, lastTap = 0;
@@ -516,7 +517,11 @@ function handleClick(x, y, shift, ptype) {
     view.selProv = null; showDivInfo(); return;
   }
   const p = view.provAt(x, y);
-  if (ptype === "touch" && view.selected.size && p && !(ctr && ctr.tag === player)) { moveSelected(p); return; }
+  if (view.selected.size && !shift) {
+    if (p) { if (moveSelected(p)) { view.selected.clear(); $("info").classList.add("hidden"); view.selProv = null; } }
+    else { view.selected.clear(); $("info").classList.add("hidden"); }
+    view.dirty = true; return;
+  }
   if (!shift) view.selected.clear();
   view.selProv = p;
   if (p) showProvInfo(p); else $("info").classList.add("hidden");
