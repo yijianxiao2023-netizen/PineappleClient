@@ -25,9 +25,9 @@ python3 -m PyInstaller --noconfirm --clean --windowed \
   --icon "$WORK/$APP.icns" \
   --osx-bundle-identifier com.slaxy.pineappleclient \
   --collect-all minecraft_launcher_lib \
-  --add-data "launcher/mods:mods" \
+  --add-data "$ROOT/launcher/mods:mods" \
   --distpath "$WORK/dist" --workpath "$WORK/pyi" --specpath "$WORK" \
-  launcher/launcher.py
+  "$ROOT/launcher/launcher.py"
 
 codesign --force --deep --sign - "$WORK/dist/$APP.app"
 
