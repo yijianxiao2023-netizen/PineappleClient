@@ -12,7 +12,10 @@ A grand strategy game of Europe on the eve of the Second World War, in the spiri
 - **Economy:** civilian factories build, military factories produce infantry equipment and tanks, and manpower limits your army. Captured factories work at reduced output.
 - **Research:** industry, land, armor, doctrines and electronics, with a penalty for researching ahead of time.
 - **National focuses:** a shared tree plus extra national focuses for the five great powers.
-- **Warfare:** infantry and armored divisions, terrain, forts, entrenchment, organization and strength, supply lines, retreats and encirclements, sea crossings, and naval invasions that depend on navy strength.
+- **Units, each with its own icon and color:** Infantry, Anti-Tank, Light Tanks, Armored divisions, Fighters, Bombers and Battle Fleets. A legend sits on the map (toggle with `L`).
+- **Movement takes real time.** At speed 3, infantry takes about 5 seconds per province, tanks about 3, and aircraft and fleets about 1 to 2. Moving units slide across the map.
+- **Warfare:** terrain, forts, entrenchment, organization and strength, supply lines, retreats and encirclements. Anti-tank divisions blunt tank attacks. Fighters win air superiority, and bombers boost nearby battles. Fleets fight each other, bombard coastal battles and decide naval invasions.
+- **More land means more factories, gear and money.** Every province you control adds industry and daily income, and you can use the factories you capture. Money pays for every unit and building.
 - **Diplomacy:** factions, war goals, declarations of war, guarantees, and joining, founding or inviting countries to factions. Countries capitulate when they lose their core territory.
 - The game ends in 1950.
 

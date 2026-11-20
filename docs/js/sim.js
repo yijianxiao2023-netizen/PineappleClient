@@ -1,4 +1,4 @@
-import { START_DATE, COUNTRIES, FACTIONS, TERRAIN, UNIT, BUILD, TECHS, GENERIC_FOCUS, NATIONAL_FOCUS } from "./data.js";
+import { START_DATE, COUNTRIES, FACTIONS, TERRAIN, UNIT, BUILD, TECHS, GENERIC_FOCUS, NATIONAL_FOCUS, AIR_RANGE } from "./data.js";
 
 const DAY = 86400000;
 const HOUR = 3600000;
@@ -40,17 +40,26 @@ export class Game {
     this.countries = {};
     for (const [tag, d] of Object.entries(COUNTRIES)) {
       this.countries[tag] = {
-        tag, ...d, alive: true, pp: 50, manpower: d.pop * 8, eqInf: d.mil * 600 + d.divs * 200, tanks: 0, infShare: 1,
+        tag, ...d, alive: true, pp: 50, manpower: d.pop * 8, eqInf: d.mil * 600 + d.divs * 200, tanks: 0, planes: d.mil * 20, money: 400 + d.civ * 25, income: 0, share: { tank: 0, air: 0.1 },
         techs: new Set(), research: Array.from({ length: d.slots }, () => null), focus: null, focusDone: new Set(),
         focusBonus: { ...(d.spirit || {}) }, mods: {}, construction: [], training: [], wargoals: {}, justifying: null, guarantees: new Set(),
         capital: -1, civEff: 0, milEff: 0, supplied: new Set(), kills: 0, losses: 0, flags: {},
       };
     }
     for (const p of this.P) {
-      p.ctrl = p.owner; p.civ = 0; p.mil = 0; p.fort = 0; p.divs = new Set();
+      p.ctrl = p.owner; p.civ = 0; p.mil = 0; p.fort = 0; p.divs = new Set(); p.air = new Set(); p.ships = new Set();
       p.slots = Math.max(1, 1 + Math.floor(p.vp / 5)) + (p.terrain === "plains" ? 1 : 0) - (p.terrain === "desert" ? 1 : 0);
       if (p.slots < 0) p.slots = 0;
       if (p.capital && this.countries[p.capital]) this.countries[p.capital].capital = p.id;
+    }
+    const coastPts = new Set();
+    for (const poly of map.coast) for (const ring of poly) for (const [x, y] of ring) coastPts.add(x + "," + y);
+    for (const p of this.P) {
+      p.coastal = p.sea.length > 0;
+      if (!p.coastal) outer: for (const poly of p.shape) for (const ring of poly) for (const [x, y] of ring) {
+        const rx = Math.round(x), ry = Math.round(y);
+        for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (coastPts.has((rx + dx) + "," + (ry + dy))) { p.coastal = true; break outer; }
+      }
     }
     for (const c of Object.values(this.countries)) {
       const home = this.homeComponent(c.tag);
@@ -65,6 +74,7 @@ export class Game {
       this.distributeFactories(c, "civ", c.civ);
       this.distributeFactories(c, "mil", c.mil);
       this.placeStartingDivisions(c);
+      this.placeStartingAirNavy(c);
     }
     this.rebuildRelations();
     this.updateEconomyCache();
@@ -82,7 +92,7 @@ export class Game {
   c(tag) { return this.countries[tag]; }
   ownedProvs(tag) { return this.P.filter(p => p.owner === tag); }
   controlledProvs(tag) { return this.P.filter(p => p.ctrl === tag); }
-  divsOf(tag) { return [...this.divs.values()].filter(d => d.tag === tag); }
+  divsOf(tag, domain = "land") { return [...this.divs.values()].filter(d => d.tag === tag && d.domain === domain); }
   alive() { return Object.values(this.countries).filter(c => c.alive); }
   get date() { return new Date(this.time); }
   get year() { return new Date(this.time).getUTCFullYear(); }
@@ -122,14 +132,33 @@ export class Game {
     }
   }
 
+  placeStartingAirNavy(c) {
+    const cap = this.P[c.capital];
+    if (!cap) return;
+    const F = { GER: [4, 2], ENG: [3, 1], FRA: [3, 1], ITA: [3, 1], SOV: [4, 1] }[c.tag] || [c.civ >= 5 ? 1 : 0, 0];
+    for (let i = 0; i < F[0]; i++) this.spawnDiv(c.tag, "ftr", cap.id, 1, 1);
+    for (let i = 0; i < F[1]; i++) this.spawnDiv(c.tag, "bmb", cap.id, 1, 1);
+    this.spawnShips(c, Math.round(c.navy / 10));
+  }
+
+  spawnShips(c, n) {
+    if (n <= 0) return;
+    const cap = this.P[c.capital];
+    const ports = this.P.filter(p => p.coastal && p.owner === c.tag && p.ctrl === c.tag).sort((a, b) => (b.vp - a.vp) || (cap ? Math.hypot(a.c[0] - cap.c[0], a.c[1] - cap.c[1]) - Math.hypot(b.c[0] - cap.c[0], b.c[1] - cap.c[1]) : 0));
+    if (!ports.length) return;
+    for (let i = 0; i < n; i++) this.spawnDiv(c.tag, "ship", ports[i % Math.min(3, ports.length)].id, 1, 1);
+  }
+
+  setFor(p, d) { return d.domain === "air" ? p.air : d.domain === "sea" ? p.ships : p.divs; }
   spawnDiv(tag, type, provId, str = 1, org = 0.6) {
-    const d = { id: this.nextDivId++, tag, type, prov: provId, str, org, path: [], prog: 0, attacking: null, entrench: 0, sea: false };
+    const d = { id: this.nextDivId++, tag, type, domain: UNIT[type].domain, prov: provId, str, org, path: [], prog: 0, attacking: null, entrench: 0, sea: false };
     this.divs.set(d.id, d);
-    this.P[provId].divs.add(d.id);
+    this.setFor(this.P[provId], d).add(d.id);
     return d;
   }
-  removeDiv(d) { this.P[d.prov].divs.delete(d.id); this.divs.delete(d.id); }
-  moveDivTo(d, provId) { this.P[d.prov].divs.delete(d.id); d.prov = provId; this.P[provId].divs.add(d.id); }
+  removeDiv(d) { this.setFor(this.P[d.prov], d).delete(d.id); this.divs.delete(d.id); }
+  moveDivTo(d, provId) { this.setFor(this.P[d.prov], d).delete(d.id); d.prov = provId; this.setFor(this.P[provId], d).add(d.id); }
+  unitsOf(tag) { return [...this.divs.values()].filter(d => d.tag === tag); }
 
   factionOf(tag) { return this.factions.find(f => f.members.has(tag)) || null; }
 
@@ -153,8 +182,8 @@ export class Game {
   friendly(a, b) { const r = this.relation(a, b); return r === "self" || r === "ally"; }
   atWarAny(tag) { return this.wars.some(w => w.sides[0].has(tag) || w.sides[1].has(tag)); }
   enemiesOf(tag) { return Object.keys(this.countries).filter(t => this.atWar(tag, t)); }
-  navyPower(tag) { let n = 0; for (const c of this.alive()) if (this.friendly(tag, c.tag)) n += c.navy; return n; }
-  canInvade(tag, enemy) { return this.navyPower(tag) >= this.navyPower(enemy) * 0.9; }
+  navyPower(tag) { let n = 0; for (const d of this.divs.values()) if (d.domain === "sea" && this.friendly(tag, d.tag)) n += d.str * 10; return Math.round(n); }
+  canInvade(tag, enemy) { const mine = this.navyPower(tag); return mine > 0 && mine >= this.navyPower(enemy) * 0.9; }
   canEnter(tag, p) { const r = this.relation(tag, p.ctrl); return r === "self" || r === "ally" || r === "enemy"; }
 
   recomputeMods(c) {
@@ -167,10 +196,18 @@ export class Game {
   mod(tag, k) { return this.countries[tag].mods[k] || 0; }
 
   updateEconomyCache() {
-    for (const c of Object.values(this.countries)) { c.civEff = 0; c.milEff = 0; c.vpOwned = 0; c.vpLost = 0; c.mpBase = 0; }
+    for (const c of Object.values(this.countries)) { c.civEff = 0; c.milEff = 0; c.vpOwned = 0; c.vpLost = 0; c.mpBase = 0; c.income = 0; c.provCount = 0; }
     for (const p of this.P) {
       const c = this.countries[p.ctrl];
-      if (c) { const f = p.owner === p.ctrl ? (p.home ? 1 : 0.6) : 0.3; c.civEff += p.civ * f; c.milEff += p.mil * f; c.mpBase += (p.pop || 0) * (p.owner === p.ctrl && p.home ? 1 : 0.12); }
+      if (c) {
+        const owned = p.owner === p.ctrl;
+        const f = owned ? (p.home ? 1 : 0.8) : 0.6;
+        const land = owned ? 1 : 0.6;
+        c.civEff += p.civ * f + 0.08 * land; c.milEff += p.mil * f + 0.06 * land;
+        c.mpBase += (p.pop || 0) * (owned && p.home ? 1 : 0.15);
+        c.income += (0.5 + 0.3 * p.vp) * land;
+        c.provCount++;
+      }
       const o = this.countries[p.owner];
       if (o) { const w = (1 + p.vp) * (p.home ? 1 : 0.15); o.vpOwned += w; if (p.ctrl !== p.owner && this.atWar(p.ctrl, p.owner)) o.vpLost += w; }
     }
@@ -200,6 +237,8 @@ export class Game {
   legHours(d, from, to, viaSea) {
     const a = this.P[from], b = this.P[to];
     const dist = Math.hypot(a.c[0] - b.c[0], a.c[1] - b.c[1]);
+    const u = UNIT[d.type];
+    if (u.domain !== "land") return Math.max(2, u.hours * dist / 38);
     let h = UNIT[d.type].hours * TERRAIN[b.terrain].move * clamp(dist / 38, 0.6, 3.2);
     if (viaSea) h *= 3;
     if (this.atWar(d.tag, b.ctrl)) h *= 1.5;
@@ -239,12 +278,46 @@ export class Game {
     return path;
   }
 
+  findSeaPath(tag, from, to) {
+    const dest = this.P[to];
+    if (!dest.coastal || !this.friendly(tag, dest.ctrl)) return null;
+    const dist = new Map([[from, 0]]), prev = new Map(), done = new Set();
+    const open = [[0, from]];
+    const fake = { type: "ship", tag };
+    while (open.length) {
+      let bi = 0; for (let i = 1; i < open.length; i++) if (open[i][0] < open[bi][0]) bi = i;
+      const [dc, id] = open.splice(bi, 1)[0];
+      if (done.has(id)) continue; done.add(id);
+      if (id === to) break;
+      const p = this.P[id];
+      for (const n of [...p.sea, ...p.adj]) {
+        const q = this.P[n];
+        if (done.has(n) || !q.coastal || this.relation(tag, q.ctrl) === "neutral") continue;
+        const nd = dc + this.legHours(fake, id, n, false);
+        if (nd < (dist.get(n) ?? Infinity)) { dist.set(n, nd); prev.set(n, id); open.push([nd, n]); }
+      }
+    }
+    if (!prev.has(to)) return null;
+    const path = []; let cur = to;
+    while (cur !== from) { path.unshift({ id: cur, sea: false }); cur = prev.get(cur); }
+    return path;
+  }
+
   orderMove(divIds, target) {
     let ok = 0;
     for (const id of divIds) {
       const d = this.divs.get(id);
       if (!d) continue;
       if (d.prov === target) { d.path = []; d.attacking = null; d.prog = 0; ok++; continue; }
+      if (d.domain === "air") {
+        if (!this.friendly(d.tag, this.P[target].ctrl)) continue;
+        d.path = [{ id: target, sea: false }]; d.prog = 0; ok++; continue;
+      }
+      if (d.domain === "sea") {
+        const sp = this.findSeaPath(d.tag, d.prov, target);
+        if (sp) { d.path = sp; d.prog = 0; ok++; }
+        continue;
+      }
       const path = this.findPath(d.tag, d.type, d.prov, target);
       if (path) { d.path = path; d.prog = 0; d.attacking = null; ok++; }
     }
@@ -259,6 +332,38 @@ export class Game {
     p.ctrl = newCtrl;
     this.mapVersion++;
     for (const id of [...p.divs]) { const d = this.divs.get(id); if (d && this.atWar(d.tag, tag)) this.retreatOrDestroy(d, tag); }
+    for (const id of [...p.air, ...p.ships]) { const d = this.divs.get(id); if (d && !this.friendly(d.tag, newCtrl)) this.rebase(d); }
+  }
+
+  rebase(d) {
+    let best = null, bd = Infinity;
+    const here = this.P[d.prov];
+    for (const q of this.P) {
+      if (q.ctrl !== d.tag && !(this.friendly(d.tag, q.ctrl))) continue;
+      if (d.domain === "sea" && !q.coastal) continue;
+      const dist = Math.hypot(q.c[0] - here.c[0], q.c[1] - here.c[1]);
+      if (dist < bd) { bd = dist; best = q; }
+    }
+    if (!best || (d.domain === "sea" && bd > 400)) { this.countries[d.tag].losses++; this.removeDiv(d); return; }
+    this.moveDivTo(d, best.id); d.path = []; d.prog = 0;
+  }
+
+  supportAt(p, tag) {
+    let F = 0, B = 0, S = 0;
+    const list = [];
+    for (const d of this.airList) {
+      if (!this.friendly(tag, d.tag)) continue;
+      const q = this.P[d.prov];
+      if (Math.hypot(q.c[0] - p.c[0], q.c[1] - p.c[1]) > AIR_RANGE) continue;
+      if (d.type === "ftr") F += d.str * (1 + this.mod(d.tag, "ftr")); else B += d.str * (1 + this.mod(d.tag, "bmb"));
+      list.push(d);
+    }
+    if (p.coastal) for (const d of this.shipList) {
+      if (!this.friendly(tag, d.tag)) continue;
+      const q = this.P[d.prov];
+      if (Math.hypot(q.c[0] - p.c[0], q.c[1] - p.c[1]) <= 90) S += d.str;
+    }
+    return { F, B, S, list };
   }
 
   retreatOrDestroy(d, enemyTag) {
@@ -295,9 +400,22 @@ export class Game {
     this.time += HOUR;
     this.hourCount++;
     this.battles.clear();
+    this.airList = []; this.shipList = [];
+    for (const d of this.divs.values()) { if (d.domain === "air") this.airList.push(d); else if (d.domain === "sea") this.shipList.push(d); }
     const attackersBy = new Map();
     for (const d of this.divs.values()) {
       if (!d.path.length) { d.attacking = null; continue; }
+      if (d.domain !== "land") {
+        const step = d.path[0];
+        d.prog += 1;
+        if (d.prog >= this.legHours(d, d.prov, step.id, false)) {
+          d.prog = 0; d.path.shift();
+          const q = this.P[step.id];
+          if (d.domain === "air" && !this.friendly(d.tag, q.ctrl)) { d.path = []; continue; }
+          this.moveDivTo(d, step.id);
+        }
+        continue;
+      }
       const step = d.path[0], next = this.P[step.id];
       if (!this.canEnter(d.tag, next) && next.ctrl !== d.tag) { d.path = []; d.attacking = null; continue; }
       const enemyHere = [...next.divs].some(i => { const e = this.divs.get(i); return e && this.atWar(d.tag, e.tag); });
@@ -319,7 +437,7 @@ export class Game {
     }
     for (const [pid, atts] of attackersBy) this.resolveBattle(this.P[pid], atts);
     for (const d of this.divs.values()) {
-      if (d.attacking != null) continue;
+      if (d.attacking != null || d.domain !== "land") continue;
       const inBattle = this.battles.has(d.prov);
       if (inBattle) continue;
       const supplied = this.countries[d.tag].supplied.has(d.prov);
@@ -336,18 +454,28 @@ export class Game {
     if (!defs.length) return;
     const terr = TERRAIN[p.terrain];
     const winter = this.isWinter(p);
-    const antiArmor = Math.max(0, ...defs.map(d => this.mod(d.tag, "antiArmor")));
+    const antiArmor = Math.min(0.7, Math.max(0, ...defs.map(d => this.mod(d.tag, "antiArmor"))) + (defs.some(d => d.type === "at") ? UNIT.at.antiArmor : 0));
+    const sa = this.supportAt(p, atts[0].tag), sd = this.supportAt(p, defs[0].tag);
+    const shareA = (sa.F + 0.01) / (sa.F + sd.F + 0.02), shareD = 1 - shareA;
+    const multA = 1 + Math.min(0.6, 0.07 * sa.B * shareA) + Math.min(0.15, 0.03 * sa.F * shareA) + Math.min(0.2, 0.05 * sa.S);
+    const multD = 1 + Math.min(0.6, 0.07 * sd.B * shareD) + Math.min(0.15, 0.03 * sd.F * shareD) + Math.min(0.2, 0.05 * sd.S);
+    for (const [mine, foe] of [[sa, sd], [sd, sa]]) {
+      if (foe.F <= 0) continue;
+      const hit = 0.0015 * foe.F / (mine.F + foe.F + 0.01);
+      for (const d of mine.list) { if (!this.divs.has(d.id)) continue; d.str -= hit * (d.type === "bmb" ? 1.4 : 1); d.mission = this.hourCount; if (d.str <= 0.05) { this.countries[d.tag].losses++; this.removeDiv(d); } }
+    }
+    for (const d of [...sa.list, ...sd.list]) d.mission = this.hourCount;
     const attPow = d => {
       const u = UNIT[d.type];
-      let v = u.att * (1 + this.mod(d.tag, d.type === "arm" ? "armAtt" : "infAtt")) * d.str * (0.3 + 0.7 * d.org);
-      if (d.type === "arm") v *= terr.armor * (1 - antiArmor);
+      let v = u.att * (1 + this.mod(d.tag, u.armor ? "armAtt" : "infAtt")) * d.str * (0.3 + 0.7 * d.org) * multA;
+      if (u.armor) v *= terr.armor * (1 - antiArmor);
       if (d.sea) v *= 0.5;
       if (winter && d.tag !== "SOV" && d.tag !== "FIN") v *= 0.75;
       return v;
     };
     const defPow = d => {
       const u = UNIT[d.type];
-      return u.def * (1 + this.mod(d.tag, d.type === "arm" ? "armDef" : "infDef")) * terr.def * (1 + 0.15 * p.fort) * (1 + 0.25 * d.entrench * (1 + this.mod(d.tag, "entrench"))) * d.str * (0.3 + 0.7 * d.org);
+      return multD * u.def * (1 + this.mod(d.tag, u.armor ? "armDef" : "infDef")) * terr.def * (1 + 0.15 * p.fort) * (1 + 0.25 * d.entrench * (1 + this.mod(d.tag, "entrench"))) * d.str * (0.3 + 0.7 * d.org);
     };
     const top = (arr, f) => arr.map(f).sort((a, b) => b - a).slice(0, 12).reduce((s, v, i) => s + v * (i < 8 ? 1 : 0.5), 0);
     const A = top(atts, attPow), D = top(defs, defPow);
@@ -356,7 +484,7 @@ export class Game {
     for (const d of defs) { const j = 0.8 + this.rng() * 0.4; d.org -= defLoss * j; d.str -= defLoss * 0.2 * j; d.entrench = Math.max(0, d.entrench - 0.002); }
     for (const a of atts) { const j = 0.8 + this.rng() * 0.4; a.org -= attLoss * j; a.str -= attLoss * 0.16 * j; }
     const attTag = atts[0].tag, defTag = defs[0].tag;
-    this.battles.set(p.id, { A, D, attTag, defTag, prov: p.id, from: [...new Set(atts.map(a => a.prov))] });
+    this.battles.set(p.id, { A, D, attTag, defTag, prov: p.id, from: [...new Set(atts.map(a => a.prov))], air: sa.B + sa.F + sd.B + sd.F > 0 });
     for (const d of [...defs]) {
       if (d.str <= 0.05) { this.countries[d.tag].losses++; this.countries[attTag].kills++; this.removeDiv(d); continue; }
       if (d.org <= 0.08) this.retreatOrDestroy(d, attTag);
@@ -375,9 +503,10 @@ export class Game {
     this.updateEconomyCache();
     this.computeSupply();
     for (const c of this.alive()) this.dailyCountry(c);
+    this.navalCombat();
     for (const d of [...this.divs.values()]) {
       const c = this.countries[d.tag];
-      if (!c.supplied.has(d.prov)) { d.str -= 0.006 * (c.mods.supply ? 0.5 : 1); if (d.str <= 0.05) { c.losses++; this.removeDiv(d); } }
+      if (d.domain === "land" && !c.supplied.has(d.prov)) { d.str -= 0.006 * (c.mods.supply ? 0.5 : 1); if (d.str <= 0.05) { c.losses++; this.removeDiv(d); } }
     }
     this.checkCapitulations();
     if (this.ai) for (const c of this.alive()) if (c.tag !== this.player) this.ai(this, c);
@@ -385,7 +514,29 @@ export class Game {
     if (d.getUTCDate() === 1) this.log(`${dateStr(this.time)}`, "date");
   }
 
+  navalCombat() {
+    const ships = [...this.divs.values()].filter(d => d.domain === "sea");
+    const hits = new Map();
+    for (const s of ships) {
+      const a = this.P[s.prov];
+      let E = 0, O = 0;
+      for (const t of ships) {
+        const b = this.P[t.prov];
+        if (Math.hypot(a.c[0] - b.c[0], a.c[1] - b.c[1]) > 90) continue;
+        if (this.atWar(s.tag, t.tag)) E += t.str; else if (this.friendly(s.tag, t.tag)) O += t.str;
+      }
+      if (E > 0) hits.set(s, 0.07 * E / (O + E) * (0.8 + this.rng() * 0.4));
+    }
+    let any = false;
+    for (const [s, h] of hits) {
+      s.str -= h; any = true;
+      if (s.str <= 0.05) { this.countries[s.tag].losses++; this.removeDiv(s); if (s.tag === this.player) this.log(`A ${this.countries[s.tag].adj} battle fleet was sunk near ${this.P[s.prov].name}.`, "war", [s.tag]); }
+    }
+    return any;
+  }
+
   dailyCountry(c) {
+    c.money += c.income + c.civEff * 0.4;
     c.pp = Math.min(2000, c.pp + 2 + (c.mods.ppGain || 0));
     c.manpower += c.mpBase * 0.02 * (1 + (c.mods.manpower || 0));
 
@@ -407,26 +558,29 @@ export class Game {
     c.construction = c.construction.filter(i => !i.done && this.P[i.prov].owner === c.tag);
 
     const prod = c.milEff * 4.5 * (1 + (c.mods.output || 0));
-    const armor = c.techs.has("tank1");
-    const inf = armor ? clamp(c.infShare, 0, 1) : 1;
-    c.eqInf += prod * inf / 0.5;
-    if (armor) c.tanks += prod * (1 - inf) / 4;
+    const tankS = c.techs.has("tank1") ? clamp(c.share.tank, 0, 1) : 0;
+    const airS = clamp(c.share.air, 0, 1 - tankS);
+    c.eqInf += prod * (1 - tankS - airS) / 0.5;
+    c.tanks += prod * tankS / 4;
+    c.planes += prod * airS / 2.5;
 
     for (const d of this.divs.values()) {
-      if (d.tag !== c.tag || d.str >= 1 || d.attacking != null || !c.supplied.has(d.prov)) continue;
+      if (d.tag !== c.tag || d.str >= 1 || d.attacking != null) continue;
+      if (d.domain === "land" ? !c.supplied.has(d.prov) : d.mission === undefined ? false : this.hourCount - d.mission < 24) continue;
       const u = UNIT[d.type];
-      const need = Math.min(0.05, 1 - d.str);
-      const eq = need * u.eq, tk = need * u.tanks, mp = need * u.mp;
-      if (c.eqInf >= eq && c.tanks >= tk && c.manpower >= mp) { c.eqInf -= eq; c.tanks -= tk; c.manpower -= mp; d.str += need; }
+      const need = Math.min(d.domain === "sea" ? 0.02 : 0.05, 1 - d.str);
+      const eq = need * u.eq, tk = need * u.tanks, pl = need * u.planes, mp = need * u.mp;
+      if (c.eqInf >= eq && c.tanks >= tk && c.planes >= pl && c.manpower >= mp) { c.eqInf -= eq; c.tanks -= tk; c.planes -= pl; c.manpower -= mp; d.str += need; }
     }
 
     for (const t of c.training) t.days--;
     const ready = c.training.filter(t => t.days <= 0);
     c.training = c.training.filter(t => t.days > 0);
     for (const t of ready) {
+      if (UNIT[t.type].domain === "sea") { this.spawnShips(c, 1); if (c.tag === this.player) this.log("A new battle fleet has been launched.", "army", [c.tag]); continue; }
       let at = this.P[c.capital];
       if (!at || at.ctrl !== c.tag) at = this.controlledProvs(c.tag).sort((a, b) => b.vp - a.vp)[0];
-      if (at) { this.spawnDiv(c.tag, t.type, at.id, 1, 0.5); if (c.tag === this.player) this.log(`New ${UNIT[t.type].name.toLowerCase()} division ready in ${at.name}.`, "army", [c.tag]); }
+      if (at) { this.spawnDiv(c.tag, t.type, at.id, 1, 0.5); if (c.tag === this.player) this.log(`New ${UNIT[t.type].name.toLowerCase()} ${UNIT[t.type].domain === "air" ? "wing" : "division"} ready in ${at.name}.`, "army", [c.tag]); }
     }
 
     for (let i = 0; i < c.research.length; i++) {
@@ -508,7 +662,7 @@ export class Game {
     if (fx.pp) c.pp += fx.pp;
     if (fx.slot) c.research.push(null);
     if (fx.manpower) c.manpower += fx.manpower;
-    if (fx.navy) c.navy += fx.navy;
+    if (fx.navy) this.spawnShips(c, Math.round(fx.navy / 10));
     if (f.bonus) { for (const [k, v] of Object.entries(f.bonus)) c.focusBonus[k] = (c.focusBonus[k] || 0) + v; this.recomputeMods(c); }
     if (fx.fortBorders) for (const p of this.P) if (p.owner === c.tag && p.ctrl === c.tag && p.adj.some(n => this.P[n].owner !== c.tag)) p.fort = Math.max(p.fort, fx.fortBorders);
     if (fx.joinFaction) {
@@ -542,6 +696,7 @@ export class Game {
   transferProvince(p, tag) {
     for (const id of [...p.divs]) { const d = this.divs.get(id); if (d && d.tag !== tag) { const cap = this.P[this.countries[d.tag].capital]; if (cap && cap.ctrl === d.tag) this.moveDivTo(d, cap.id); else this.removeDiv(d); } }
     p.owner = tag; p.ctrl = tag;
+    for (const id of [...p.air, ...p.ships]) { const d = this.divs.get(id); if (d && !this.friendly(d.tag, tag)) this.rebase(d); }
     this.mapVersion++;
   }
 
@@ -580,6 +735,7 @@ export class Game {
     }
     for (const d of [...this.divs.values()]) {
       const p = this.P[d.prov];
+      if (d.domain !== "land") { if (!this.friendly(d.tag, p.ctrl)) this.rebase(d); continue; }
       if (!this.friendly(d.tag, p.ctrl)) {
         const cap = this.P[this.countries[d.tag].capital];
         if (cap && cap.ctrl === d.tag) { this.moveDivTo(d, cap.id); d.path = []; d.attacking = null; }
@@ -699,26 +855,36 @@ export class Game {
   }
   queueBuild(tag, type, provId) {
     if (!this.canBuild(tag, type, provId)) return false;
-    this.countries[tag].construction.push({ type, prov: provId, progress: 0 });
+    const c = this.countries[tag];
+    if (c.money < BUILD[type].money) return false;
+    c.money -= BUILD[type].money;
+    c.construction.push({ type, prov: provId, progress: 0 });
     return true;
   }
 
-  canTrain(tag, type) {
+  trainBlock(tag, type) {
     const c = this.countries[tag], u = UNIT[type];
-    if (type === "arm" && !c.techs.has("tank1")) return false;
-    return c.eqInf >= u.eq && c.tanks >= u.tanks && c.manpower >= u.mp;
+    if (u.req && !c.techs.has(u.req)) return `Research ${TECHS.find(t => t.id === u.req).name}`;
+    if (u.domain === "sea" && !this.P.some(p => p.coastal && p.owner === tag && p.ctrl === tag)) return "No coastline";
+    if (c.money < u.money) return `Need $${u.money}`;
+    if (c.eqInf < u.eq) return `Need ${u.eq} equipment`;
+    if (c.tanks < u.tanks) return `Need ${u.tanks} tanks`;
+    if (c.planes < u.planes) return `Need ${u.planes} aircraft`;
+    if (c.manpower < u.mp) return `Need ${u.mp}k manpower`;
+    return null;
   }
+  canTrain(tag, type) { return !this.trainBlock(tag, type); }
   train(tag, type) {
     if (!this.canTrain(tag, type)) return false;
     const c = this.countries[tag], u = UNIT[type];
-    c.eqInf -= u.eq; c.tanks -= u.tanks; c.manpower -= u.mp;
+    c.eqInf -= u.eq; c.tanks -= u.tanks; c.planes -= u.planes; c.manpower -= u.mp; c.money -= u.money;
     c.training.push({ type, days: u.days, total: u.days });
     return true;
   }
 
   strength(tag) {
     let s = 0;
-    for (const d of this.divs.values()) if (d.tag === tag) s += (d.type === "arm" ? 2 : 1) * d.str;
+    for (const d of this.divs.values()) if (d.tag === tag && d.domain === "land") s += ({ arm: 2.2, tank: 1.6 }[d.type] || 1) * d.str;
     return s;
   }
 }

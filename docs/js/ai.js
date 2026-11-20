@@ -1,6 +1,6 @@
 import { TECHS, UNIT } from "./data.js";
 
-const TECH_ORDER = ["tools1", "constr1", "infwep1", "arty1", "DOCTRINE", "tank1", "radio", "suppwep", "tools2", "constr2", "motor", "at1", "infwep2", "tank2", "concind", "logistics", "arty2", "doc2", "radar", "constr3", "tools3", "tank3", "infwep3"];
+const TECH_ORDER = ["tools1", "constr1", "infwep1", "arty1", "DOCTRINE", "tank1", "bomber1", "radio", "suppwep", "at1", "tools2", "constr2", "ftr2", "motor", "infwep2", "tank2", "concind", "logistics", "cas", "arty2", "doc2", "radar", "constr3", "ftr3", "tools3", "tank3", "infwep3"];
 const DOCTRINE = { GER: "doc_mobile", SOV: "doc_mass", FRA: "doc_plan", ENG: "doc_fire", ITA: "doc_fire" };
 const FOCUS_ORDER = ["industry", "construction", "rearm", "production", "research", "army", "equip", "political", "conscription", "doctrine", "warprop", "alliance", "fleet", "fortify"];
 const shuffleFocus = (g, list) => { const a = [...list]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(g.rng() * (i + 1)); if (g.rng() < 0.35) [a[i], a[j]] = [a[j], a[i]]; } return a; };
@@ -18,7 +18,7 @@ function economy(g, c) {
     if (c.research[i]) continue;
     for (const id of TECH_ORDER) {
       const tid = id === "DOCTRINE" ? (DOCTRINE[c.tag] || "doc_plan") : id;
-      if (tid.startsWith("tank") || tid === "motor") { if (!c.major && !["POL", "CZE", "SWE", "ROM"].includes(c.tag)) continue; }
+      if (tid.startsWith("tank") || tid === "motor" || tid === "bomber1" || tid === "cas") { if (!c.major && !["POL", "CZE", "SWE", "ROM"].includes(c.tag)) continue; }
       const t = TECHS.find(x => x.id === tid);
       if (t && g.techAvailable(c, t)) { g.setResearch(c.tag, i, tid); break; }
     }
@@ -55,20 +55,33 @@ function economy(g, c) {
     }
   }
 
-  if (c.techs.has("tank1")) c.infShare = c.tag === "GER" ? 0.62 : c.major ? 0.75 : 0.88;
+  c.share.tank = c.techs.has("tank1") ? (c.tag === "GER" ? 0.3 : c.major ? 0.2 : 0.08) : 0;
+  c.share.air = c.major ? 0.15 : 0.08;
 
-  const divs = g.divsOf(c.tag);
+  const land = g.divsOf(c.tag);
   const war = g.atWarAny(c.tag);
-  const target = Math.round((8 + c.milEff * 1.6 + c.civEff * 0.3) * (war ? 1.35 : 1) * 1);
-  let n = divs.length + c.training.length, made = 0;
-  const armCount = divs.filter(d => d.type === "arm").length + c.training.filter(t => t.type === "arm").length;
-  const reserve = 40 + divs.length * 1.5;
-  while (n < target && made < 3 && c.manpower > reserve + 10) {
-    let type = "inf";
-    if (c.techs.has("tank1") && armCount + made < n * 0.22 && g.canTrain(c.tag, "arm")) type = "arm";
-    if (!g.canTrain(c.tag, type)) break;
-    g.train(c.tag, type); n++; made++;
+  const target = Math.round((8 + c.milEff * 1.6 + c.civEff * 0.3) * (war ? 1.35 : 1));
+  const count = t => g.unitsOf(c.tag).filter(d => d.type === t).length + c.training.filter(x => x.type === t).length;
+  const landN = land.length + c.training.filter(x => ["inf", "at", "tank", "arm"].includes(x.type)).length;
+  const reserve = 40 + land.length * 1.5;
+  const mix = c.major ? { at: 0.1, tank: 0.12, arm: 0.1 } : { at: 0.12, tank: 0.05, arm: 0.03 };
+  const fleets = { ENG: 14, FRA: 7, ITA: 7, GER: 5, SOV: 4 }[c.tag] || 0;
+  let made = 0;
+  while (made < 3) {
+    const wants = [];
+    if (landN + made < target && c.manpower > reserve + 10) {
+      for (const [t, f] of Object.entries(mix)) if (count(t) < (landN + made) * f) wants.push([t, f]);
+      wants.push(["inf", 0]);
+    }
+    const ftrWant = Math.ceil(landN / (c.major ? 7 : 12));
+    if (count("ftr") < ftrWant) wants.unshift(["ftr", 1]);
+    if (c.major && count("bmb") < Math.ceil(ftrWant / 2)) wants.splice(1, 0, ["bmb", 1]);
+    if (count("ship") < fleets && c.money > 2500) wants.push(["ship", 1]);
+    const pick = wants.find(([t]) => g.canTrain(c.tag, t));
+    if (!pick) break;
+    g.train(c.tag, pick[0]); made++;
   }
+
 }
 
 const AGGRESSION = { fascist: 1, communist: 0.8, neutral: 0.15, democratic: 0 };
@@ -140,7 +153,7 @@ function offensiveAllowed(g, c, enemyTag) {
 
 function enemyStrengthAt(g, tag, p, hostile) {
   let s = 0;
-  for (const id of p.divs) { const d = g.divs.get(id); if (d && (hostile ? hostile.has(d.tag) : g.atWar(tag, d.tag))) s += (d.type === "arm" ? 1.6 : 1.2) * d.str * (0.3 + 0.7 * d.org); }
+  for (const id of p.divs) { const d = g.divs.get(id); if (d && (hostile ? hostile.has(d.tag) : g.atWar(tag, d.tag))) s += ({ arm: 2, tank: 1.6, at: 1.3 }[d.type] || 1.2) * d.str * (0.3 + 0.7 * d.org); }
   return s;
 }
 
@@ -154,7 +167,25 @@ function hostileSet(g, c) {
   return h;
 }
 
+function airAI(g, c, day) {
+  if ((day + hash(c.tag)) % 4 !== 0) return;
+  const air = g.divsOf(c.tag, "air").filter(d => !d.path.length);
+  if (!air.length) return;
+  const enemies = new Set(g.enemiesOf(c.tag));
+  let targets = [];
+  for (const b of g.battles.values()) if (g.friendly(c.tag, b.attTag) || g.friendly(c.tag, b.defTag)) targets.push(g.P[b.prov]);
+  if (!targets.length && enemies.size) targets = g.P.filter(p => p.ctrl === c.tag && p.adj.some(n => enemies.has(g.P[n].ctrl)));
+  if (!targets.length) return;
+  let cx = 0, cy = 0; for (const t of targets) { cx += t.c[0]; cy += t.c[1]; } cx /= targets.length; cy /= targets.length;
+  const focus = targets.reduce((a, b) => (Math.hypot(a.c[0] - cx, a.c[1] - cy) < Math.hypot(b.c[0] - cx, b.c[1] - cy) ? a : b));
+  const bases = g.P.filter(p => p.ctrl === c.tag && c.supplied.has(p.id) && Math.hypot(p.c[0] - focus.c[0], p.c[1] - focus.c[1]) < 140 && !p.adj.some(n => enemies.has(g.P[n].ctrl)));
+  const base = bases.sort((a, b) => Math.hypot(a.c[0] - focus.c[0], a.c[1] - focus.c[1]) - Math.hypot(b.c[0] - focus.c[0], b.c[1] - focus.c[1]))[0] || focus;
+  if (!g.friendly(c.tag, base.ctrl)) return;
+  for (const d of air) if (Math.hypot(g.P[d.prov].c[0] - base.c[0], g.P[d.prov].c[1] - base.c[1]) > 120) g.orderMove([d.id], base.id);
+}
+
 function military(g, c, day) {
+  airAI(g, c, day);
   const my = g.divsOf(c.tag);
   if (!my.length) return;
   const enemies = g.enemiesOf(c.tag);
@@ -235,7 +266,7 @@ function military(g, c, day) {
     if (!targets.length) continue;
     targets.sort((a, b) => a.s - b.s + (b.q.vp - a.q.vp) * 0.05);
     const t = targets[0];
-    const power = here.reduce((s, d) => s + UNIT[d.type].att * (d.type === "arm" ? 1.6 : 1) * d.str * d.org * (1 + g.mod(c.tag, d.type === "arm" ? "armAtt" : "infAtt")), 0);
+    const power = here.reduce((s, d) => s + UNIT[d.type].att * (UNIT[d.type].armor ? 1.3 : 1) * d.str * d.org * (1 + g.mod(c.tag, UNIT[d.type].armor ? "armAtt" : "infAtt")), 0);
     const threatened = f.foes.some(n => enemyStrengthAt(g, c.tag, g.P[n]) > 0);
     if (t.s === 0) {
       const send = here.slice(0, threatened && here.length > 1 ? here.length - 1 : here.length).slice(0, 2);
