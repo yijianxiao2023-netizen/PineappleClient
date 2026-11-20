@@ -1,5 +1,8 @@
 # PineappleClient
 
+**Website:** https://yijianxiao2023-netizen.github.io/pineappleclient/ (after the first deploy)
+**macOS download:** [PineappleClient.dmg](https://github.com/yijianxiao2023-netizen/pineappleclient/releases/latest/download/PineappleClient.dmg)
+
 A Minecraft 1.21.1 client in two parts:
 
 - **mod/**: a Fabric mod with an in-game HUD and utilities
@@ -43,7 +46,7 @@ Pick a version (keep **1.21.1** with **Fabric + PineappleClient mod** checked), 
 | Key | Action |
 |---|---|
 | C (hold) | Zoom (smooth camera while zooming) |
-| Right Shift | PineappleClient settings menu |
+| Return (Enter) | PineappleClient settings menu |
 | G | Toggle fullbright |
 | V | Toggle sprint |
 
@@ -59,13 +62,23 @@ Settings are saved to `config/pineappleclient.json`.
 mod/src/main/java/com/slaxy/pineappleclient/
   PineappleClient.java        entrypoint, keybinds, tick logic (zoom, sprint)
   HudRenderer.java       all HUD drawing
-  SettingsScreen.java    Right-Shift menu
+  SettingsScreen.java    Return-key menu
   Config.java            JSON config
   CpsTracker.java        clicks-per-second counter
   Fullbright.java        gamma override
   mixin/                 zoom FOV, mouse clicks, window title, gamma accessor
 launcher/launcher.py     the launcher
 ```
+
+## Website and macOS .dmg
+
+- `docs/` is a static website (open `docs/index.html` or upload the folder to any static host). It describes the client, shows screenshots, and has a **Download for macOS** button.
+- The button downloads `docs/downloads/PineappleClient.dmg`. If that file isn't there, it uses the latest GitHub release instead.
+- `.github/workflows/build-and-deploy.yml` runs on every push to `main`. It builds the mod and `PineappleClient.app` on a macOS runner and packs them into `PineappleClient.dmg`, which it publishes as the `client-latest` release. It then deploys `docs/` with the .dmg to GitHub Pages.
+- One-time setup: in the repo, go to **Settings > Pages > Build and deployment > Source** and choose **GitHub Actions**.
+- To build the .dmg yourself on a Mac, run `./build_mod.sh && ./packaging/macos/build_dmg.sh`. The result is `dist/PineappleClient.dmg`.
+- The app is ad-hoc signed, not notarized, so the first time you open it, right-click it and choose **Open**.
+- The pictures on the site are pixel-art mockups made by `tools/make_images.py`. To show the real game, replace the files in `docs/img/` with real screenshots, keeping the same names.
 
 ## Changing the Minecraft version
 

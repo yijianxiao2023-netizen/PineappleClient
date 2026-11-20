@@ -9,3 +9,5 @@ __pycache__/
 *.pyc
 launcher/mods/*.jar
 .DS_Store
+dist/
+docs/downloads/*.dmg

@@ -8,7 +8,6 @@ import subprocess
 import sys
 import threading
 import urllib.parse
-import urllib.request
 import uuid
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -18,6 +17,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 import minecraft_launcher_lib as mll
+import requests
 
 APP_NAME = "PineappleClient"
 APP_VERSION = "1.0.0"
@@ -26,7 +26,7 @@ REDIRECT_PORT = 8765
 REDIRECT_URI = f"http://localhost:{REDIRECT_PORT}/callback"
 USER_AGENT = f"SlaxY1r/{APP_NAME}-launcher/{APP_VERSION}"
 
-LAUNCHER_DIR = Path(__file__).resolve().parent
+LAUNCHER_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 BUNDLED_MODS_DIR = LAUNCHER_DIR / "mods"
 
 
@@ -79,16 +79,18 @@ def offline_uuid(name: str) -> str:
 
 
 def http_json(url: str):
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read().decode())
+    r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=30)
+    r.raise_for_status()
+    return r.json()
 
 
 def download(url: str, dest: Path) -> None:
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     tmp = dest.with_suffix(dest.suffix + ".part")
-    with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as f:
-        shutil.copyfileobj(r, f)
+    with requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=60, stream=True) as r:
+        r.raise_for_status()
+        with open(tmp, "wb") as f:
+            for chunk in r.iter_content(1 << 16):
+                f.write(chunk)
     tmp.replace(dest)
 
 

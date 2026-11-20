@@ -32,7 +32,7 @@ public class PineappleClient implements ClientModInitializer {
         CONFIG = Config.load();
 
         zoomKey = register("key.pineappleclient.zoom", GLFW.GLFW_KEY_C);
-        menuKey = register("key.pineappleclient.menu", GLFW.GLFW_KEY_RIGHT_SHIFT);
+        menuKey = register("key.pineappleclient.menu", GLFW.GLFW_KEY_ENTER);
         fullbrightKey = register("key.pineappleclient.fullbright", GLFW.GLFW_KEY_G);
         sprintKey = register("key.pineappleclient.togglesprint", GLFW.GLFW_KEY_V);
 
