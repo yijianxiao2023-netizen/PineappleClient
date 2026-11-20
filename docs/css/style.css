@@ -162,3 +162,12 @@ input[type=range] { width: 100%; accent-color: var(--gold); }
   #info { width: calc(100vw - 80px); }
   #log { display: none; }
 }
+
+.uicon { display: inline-block; vertical-align: middle; border: 1px solid #000; image-rendering: auto; flex: none; }
+.unitcard { align-items: flex-start; }
+.unitcard .uicon { margin-top: 2px; }
+#legend { position: fixed; right: 12px; top: 64px; z-index: 16; background: rgba(18,20,25,.88); border: 1px solid #3c4250; padding: 6px 9px 7px; font-size: 11.5px; display: grid; gap: 3px; }
+#legend .lg-head { font-family: var(--head); text-transform: uppercase; letter-spacing: 1px; font-size: 12px; color: var(--gold-2); margin-bottom: 2px; }
+#legend .lg { display: flex; align-items: center; gap: 7px; cursor: help; }
+.divrow { grid-template-columns: 22px 1fr 1.3fr; }
+@media (max-width: 760px) { #legend { display: none; } }

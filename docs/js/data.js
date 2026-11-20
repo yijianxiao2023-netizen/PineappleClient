@@ -58,14 +58,21 @@ export const TERRAIN = {
 };
 
 export const UNIT = {
-  inf: { name: "Infantry", short: "INF", att: 1.0, def: 1.6, hours: 40, eq: 1000, tanks: 0, mp: 10, days: 60 },
-  arm: { name: "Armored", short: "ARM", att: 2.6, def: 1.2, hours: 22, eq: 400, tanks: 150, mp: 8, days: 90 },
+  inf: { name: "Infantry", short: "INF", domain: "land", att: 1.0, def: 1.6, hours: 40, eq: 1000, tanks: 0, planes: 0, mp: 10, money: 250, days: 60, color: "#a7b0ba", desc: "Cheap, tough defenders." },
+  at: { name: "Anti-Tank", short: "AT", domain: "land", att: 0.6, def: 1.9, hours: 44, eq: 900, tanks: 0, planes: 0, mp: 9, money: 300, days: 60, req: "at1", antiArmor: 0.35, color: "#e8963c", desc: "Defensive. Cuts enemy tank attacks by 35% when defending." },
+  tank: { name: "Light Tanks", short: "TNK", domain: "land", att: 2.0, def: 1.1, hours: 20, eq: 300, tanks: 100, planes: 0, mp: 6, money: 450, days: 75, req: "tank1", armor: true, color: "#8fd46a", desc: "Fast attackers. Weak in rough terrain." },
+  arm: { name: "Armored", short: "ARM", domain: "land", att: 3.0, def: 1.6, hours: 26, eq: 400, tanks: 250, planes: 0, mp: 8, money: 700, days: 100, req: "tank2", armor: true, color: "#3f9a46", desc: "Heavy armored division. The strongest attacker." },
+  ftr: { name: "Fighters", short: "FTR", domain: "air", att: 0, def: 0, hours: 8, eq: 0, tanks: 0, planes: 100, mp: 1, money: 400, days: 45, color: "#6cc8f2", desc: "Win air superiority within range of their airfield." },
+  bmb: { name: "Bombers", short: "BMB", domain: "air", att: 0, def: 0, hours: 10, eq: 0, tanks: 0, planes: 150, mp: 2, money: 550, days: 60, req: "bomber1", color: "#b884ea", desc: "Strengthen your side in nearby battles. Need fighter cover." },
+  ship: { name: "Battle Fleet", short: "FLT", domain: "sea", att: 0, def: 0, hours: 12, eq: 1500, tanks: 0, planes: 0, mp: 3, money: 1500, days: 180, color: "#4a7fd0", desc: "Naval strength for sea invasions. Bombards nearby coastal battles." },
 };
+export const AIR_RANGE = 170;
+export const UNIT_ORDER = ["inf", "at", "tank", "arm", "ftr", "bmb", "ship"];
 
 export const BUILD = {
-  civ: { name: "Civilian Factory", cost: 10800 },
-  mil: { name: "Military Factory", cost: 7200 },
-  fort: { name: "Land Fort", cost: 3000 },
+  civ: { name: "Civilian Factory", cost: 10800, money: 600 },
+  mil: { name: "Military Factory", cost: 7200, money: 600 },
+  fort: { name: "Land Fort", cost: 3000, money: 200 },
 };
 
 export const TECHS = [
@@ -80,11 +87,11 @@ export const TECHS = [
   { id: "suppwep", name: "Support Weapons", cat: "Land", year: 1937, days: 120, req: ["infwep1"], fx: { infDef: 0.1 }, desc: "+10% infantry defense" },
   { id: "arty1", name: "Artillery", cat: "Land", year: 1936, days: 120, req: [], fx: { infAtt: 0.15 }, desc: "+15% infantry attack" },
   { id: "infwep2", name: "Infantry Equipment II", cat: "Land", year: 1939, days: 160, req: ["infwep1"], fx: { infAtt: 0.1, infDef: 0.1 }, desc: "+10% infantry attack and defense" },
-  { id: "at1", name: "Anti-Tank Guns", cat: "Land", year: 1938, days: 140, req: ["arty1"], fx: { antiArmor: 0.3 }, desc: "Armored divisions deal 30% less damage to you" },
+  { id: "at1", name: "Anti-Tank Guns", cat: "Land", year: 1937, days: 130, req: ["arty1"], fx: { antiArmor: 0.15 }, desc: "Unlocks anti-tank divisions. Enemy tanks deal 15% less damage." },
   { id: "arty2", name: "Improved Artillery", cat: "Land", year: 1940, days: 180, req: ["arty1", "suppwep"], fx: { infAtt: 0.15 }, desc: "+15% infantry attack" },
   { id: "infwep3", name: "Infantry Equipment III", cat: "Land", year: 1942, days: 200, req: ["infwep2"], fx: { infAtt: 0.1, infDef: 0.15 }, desc: "+10% attack, +15% defense" },
-  { id: "tank1", name: "Light Tanks", cat: "Armor", year: 1936, days: 120, req: [], fx: { unlockArmor: 1 }, desc: "Unlocks armored divisions" },
-  { id: "tank2", name: "Medium Tanks", cat: "Armor", year: 1939, days: 180, req: ["tank1"], fx: { armAtt: 0.25 }, desc: "+25% armor attack" },
+  { id: "tank1", name: "Light Tanks", cat: "Armor", year: 1936, days: 120, req: [], fx: {}, desc: "Unlocks light tank divisions and tank production." },
+  { id: "tank2", name: "Medium Tanks", cat: "Armor", year: 1938, days: 170, req: ["tank1"], fx: { armAtt: 0.15 }, desc: "Unlocks armored divisions. +15% tank attack." },
   { id: "tank3", name: "Heavy Tanks", cat: "Armor", year: 1941, days: 200, req: ["tank2"], fx: { armAtt: 0.2, armDef: 0.3 }, desc: "+20% armor attack, +30% armor defense" },
   { id: "motor", name: "Motorization", cat: "Armor", year: 1937, days: 140, req: ["tank1"], fx: { speed: 0.15 }, desc: "+15% movement speed" },
   { id: "doc_mobile", name: "Mobile Warfare", cat: "Doctrine", year: 1936, days: 150, req: [], fx: { armAtt: 0.15, speed: 0.1 }, desc: "+15% armor attack, +10% speed", group: "doctrine" },
@@ -92,6 +99,10 @@ export const TECHS = [
   { id: "doc_plan", name: "Grand Battleplan", cat: "Doctrine", year: 1936, days: 150, req: [], fx: { entrench: 0.2, infDef: 0.1 }, desc: "+20% entrenchment, +10% defense", group: "doctrine" },
   { id: "doc_mass", name: "Mass Assault", cat: "Doctrine", year: 1936, days: 150, req: [], fx: { manpower: 0.3, orgRegen: 0.2 }, desc: "+30% manpower, faster recovery", group: "doctrine" },
   { id: "doc2", name: "Combined Arms", cat: "Doctrine", year: 1940, days: 200, req: [], reqAny: ["doc_mobile", "doc_fire", "doc_plan", "doc_mass"], fx: { infAtt: 0.1, armAtt: 0.1 }, desc: "+10% attack for all divisions" },
+  { id: "ftr2", name: "Improved Fighters", cat: "Air", year: 1938, days: 150, req: [], fx: { ftr: 0.3 }, desc: "+30% fighter strength" },
+  { id: "bomber1", name: "Tactical Bombers", cat: "Air", year: 1936, days: 120, req: [], fx: {}, desc: "Unlocks bomber wings." },
+  { id: "cas", name: "Close Air Support", cat: "Air", year: 1939, days: 170, req: ["bomber1"], fx: { bmb: 0.3 }, desc: "+30% bomber effect in battles" },
+  { id: "ftr3", name: "Fighter Interceptors", cat: "Air", year: 1941, days: 200, req: ["ftr2"], fx: { ftr: 0.3 }, desc: "+30% fighter strength" },
   { id: "radio", name: "Radio", cat: "Electronics", year: 1937, days: 120, req: [], fx: { orgRegen: 0.25 }, desc: "+25% organization recovery" },
   { id: "logistics", name: "Logistics", cat: "Electronics", year: 1938, days: 150, req: ["radio"], fx: { supply: 1, speed: 0.05 }, desc: "Units out of supply suffer less, +5% speed" },
   { id: "radar", name: "Radar", cat: "Electronics", year: 1940, days: 180, req: ["radio"], fx: { infDef: 0.05, armDef: 0.05 }, desc: "+5% defense" },
@@ -113,7 +124,7 @@ export const GENERIC_FOCUS = [
   G("rearm", "Rearmament", 6, 0, [], { mil: 3 }, "+3 military factories.", {}),
   G("warprop", "War Propaganda", 6, 1, ["rearm"], {}, "Justifying war goals costs 50% less and is twice as fast.", { bonus: { justify: 0.5 } }),
   G("alliance", "Seek Alliance", 6, 2, ["warprop"], { joinFaction: 1 }, "Join the faction that matches our ideology.", {}),
-  G("fleet", "Expand the Fleet", 6, 3, ["warprop"], { navy: 30 }, "+30 naval strength. Naval invasions need a navy at least as strong as the enemy's.", {}),
+  G("fleet", "Expand the Fleet", 6, 3, ["warprop"], { navy: 30 }, "Launches 3 battle fleets. Sea invasions need a navy at least 90% as strong as the enemy navy.", {}),
 ];
 
 export const NATIONAL_FOCUS = {
@@ -135,7 +146,7 @@ export const NATIONAL_FOCUS = {
   ENG: [
     G("eng_rearm", "Rearm the Empire", 8, 0, [], { mil: 3 }, "+3 military factories.", {}),
     G("eng_shadow", "Shadow Factories", 8, 1, ["eng_rearm"], { mil: 3, civ: 1 }, "+3 military and +1 civilian factory.", {}),
-    G("eng_navy", "Two-Ocean Navy", 8, 2, ["eng_shadow"], { navy: 40 }, "+40 naval strength.", {}),
+    G("eng_navy", "Two-Ocean Navy", 8, 2, ["eng_shadow"], { navy: 40 }, "Launches 4 battle fleets.", {}),
   ],
   FRA: [
     G("fra_maginot", "Maginot Extension", 8, 0, [], { fortBorders: 3 }, "Level 3 forts along all borders.", {}),

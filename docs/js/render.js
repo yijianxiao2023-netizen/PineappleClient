@@ -1,4 +1,4 @@
-import { COUNTRIES, UNIT } from "./data.js";
+import { COUNTRIES, UNIT, UNIT_ORDER, AIR_RANGE } from "./data.js";
 
 const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 const rgb = (c, k = 1, a = 1) => `rgba(${Math.round(c[0] * k)},${Math.round(c[1] * k)},${Math.round(c[2] * k)},${a})`;
@@ -218,6 +218,7 @@ export class MapView {
     const drawn = new Set();
     for (const d of g.divs.values()) {
       if (!d.path.length || d.tag !== g.player) continue;
+      if (d.domain !== "land" && !this.selected.has(d.id)) continue;
       const key = d.prov + ">" + d.path[d.path.length - 1].id;
       const sel = this.selected.has(d.id);
       if (drawn.has(key + sel)) continue; drawn.add(key + sel);
@@ -232,46 +233,96 @@ export class MapView {
     }
   }
 
+  unitPos(d, frac) {
+    const g = this.g, a = g.P[d.prov];
+    if (!d.path.length || d.attacking != null) return { x: a.c[0], y: a.c[1], moving: false };
+    const b = g.P[d.path[0].id];
+    const leg = g.legHours(d, d.prov, b.id, d.path[0].sea);
+    const t = Math.max(0, Math.min(1, (d.prog + frac) / leg));
+    if (t <= 0.001) return { x: a.c[0], y: a.c[1], moving: false };
+    return { x: a.c[0] + (b.c[0] - a.c[0]) * t, y: a.c[1] + (b.c[1] - a.c[1]) * t, moving: true, to: b.id };
+  }
+
   drawUnits() {
     const ctx = this.ctx, g = this.g, s = this.scale;
     this.counterRects = [];
     const showAll = s > 1.9;
-    for (const p of g.P) {
-      if (!p.divs.size) continue;
-      const [cx, cy] = this.toScreen(p.c[0], p.c[1]);
-      if (cx < -40 || cy < -30 || cx > this.vw + 40 || cy > this.vh + 30) continue;
-      const by = new Map();
-      for (const id of p.divs) { const d = g.divs.get(id); if (!d) continue; if (!by.has(d.tag)) by.set(d.tag, []); by.get(d.tag).push(d); }
-      let k = 0;
-      for (const [tag, ds] of by) {
-        if (!showAll && tag !== g.player && !g.atWar(g.player, tag)) continue;
-        const w = 30, h = 18, x = cx - w / 2 + k * 8, y = cy + 4 + k * 8;
-        const col = hex(COUNTRIES[tag].color);
-        const sel = ds.some(d => this.selected.has(d.id));
-        const rel = tag === g.player ? "self" : g.relation(g.player, tag);
-        ctx.fillStyle = "rgba(0,0,0,0.45)"; ctx.fillRect(x + 2, y + 2, w, h);
-        ctx.fillStyle = rgb(col, 0.9); ctx.fillRect(x, y, w, h);
-        ctx.lineWidth = sel ? 2.5 : 1.2;
-        ctx.strokeStyle = sel ? "#ffe27a" : rel === "enemy" ? "#ff4a3d" : rel === "self" ? "#f1f1f1" : rel === "ally" ? "#7fd4ff" : "#222";
-        ctx.strokeRect(x, y, w, h);
-        const arm = ds.filter(d => d.type === "arm").length;
-        ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.lineWidth = 1.2;
-        const ix = x + 3, iy = y + 3, iw = 10, ih = 8;
-        ctx.strokeRect(ix, iy, iw, ih);
-        ctx.beginPath();
-        if (arm >= ds.length / 2) { ctx.ellipse(ix + iw / 2, iy + ih / 2, 3.3, 2.2, 0, 0, Math.PI * 2); }
-        else { ctx.moveTo(ix, iy); ctx.lineTo(ix + iw, iy + ih); ctx.moveTo(ix + iw, iy); ctx.lineTo(ix, iy + ih); }
-        ctx.stroke();
-        ctx.fillStyle = "#fff"; ctx.font = "700 11px Inter, system-ui, sans-serif"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
-        ctx.fillText(String(ds.length), x + w - 3, y + h / 2 - 1);
-        const org = ds.reduce((a, d) => a + d.org, 0) / ds.length, str = ds.reduce((a, d) => a + d.str, 0) / ds.length;
-        ctx.fillStyle = "#1a1a1a"; ctx.fillRect(x, y + h, w, 4);
-        ctx.fillStyle = "#5ed06a"; ctx.fillRect(x, y + h, w * Math.max(0, str), 2);
-        ctx.fillStyle = "#e8c24a"; ctx.fillRect(x, y + h + 2, w * Math.max(0, org), 2);
-        this.counterRects.push({ x, y, w, h: h + 4, tag, prov: p.id, ids: ds.map(d => d.id) });
-        k++;
-      }
+    const frac = this.frac || 0;
+    const groups = new Map();
+    for (const d of g.divs.values()) {
+      if (!showAll && d.tag !== g.player && !g.atWar(g.player, d.tag)) continue;
+      const pos = this.unitPos(d, frac);
+      const key = pos.moving ? `m${d.tag}|${d.type}|${d.prov}|${pos.to}|${Math.round(pos.x / 6)}|${Math.round(pos.y / 6)}` : `s${d.prov}|${d.tag}|${d.type}`;
+      let gp = groups.get(key);
+      if (!gp) { gp = { tag: d.tag, type: d.type, prov: d.prov, x: pos.x, y: pos.y, moving: pos.moving, ds: [] }; groups.set(key, gp); }
+      gp.ds.push(d);
     }
+    const byProv = new Map();
+    const moving = [];
+    for (const gp of groups.values()) {
+      if (gp.moving) { moving.push(gp); continue; }
+      if (!byProv.has(gp.prov)) byProv.set(gp.prov, []);
+      byProv.get(gp.prov).push(gp);
+    }
+    const rank = t => (t === g.player ? 0 : g.atWar(g.player, t) ? 2 : 1);
+    for (const [pid, list] of byProv) {
+      const p = g.P[pid];
+      const [cx, cy] = this.toScreen(p.c[0], p.c[1]);
+      if (cx < -80 || cy < -60 || cx > this.vw + 80 || cy > this.vh + 60) continue;
+      list.sort((a, b) => rank(a.tag) - rank(b.tag) || a.tag.localeCompare(b.tag) || UNIT_ORDER.indexOf(a.type) - UNIT_ORDER.indexOf(b.type));
+      const perRow = 3, W = this.counterW(), H = 22;
+      const rows = Math.ceil(list.length / perRow);
+      list.forEach((gp, i) => {
+        const r = Math.floor(i / perRow), col = i % perRow, inRow = Math.min(perRow, list.length - r * perRow);
+        const x = cx - (inRow * (W + 2)) / 2 + col * (W + 2), y = cy + 6 + r * (H + 2) - (rows > 2 ? (rows - 2) * (H + 2) / 2 : 0);
+        this.drawCounter(gp, x, y, W, H);
+      });
+    }
+    for (const gp of moving) {
+      const [x, y] = this.toScreen(gp.x, gp.y);
+      if (x < -60 || y < -40 || x > this.vw + 60 || y > this.vh + 40) continue;
+      const W = this.counterW();
+      this.drawCounter(gp, x - W / 2, y - 11, W, 22, true);
+    }
+    for (const id of this.selected) {
+      const d = g.divs.get(id);
+      if (!d || d.domain !== "air") continue;
+      const p = g.P[d.prov];
+      const [x, y] = this.toScreen(p.c[0], p.c[1]);
+      ctx.beginPath(); ctx.arc(x, y, AIR_RANGE * s, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(108,200,242,0.6)"; ctx.setLineDash([6, 5]); ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+      break;
+    }
+  }
+
+  counterW() { return this.scale > 1.4 ? 50 : 36; }
+
+  drawCounter(gp, x, y, w, h, moving) {
+    const ctx = this.ctx, g = this.g;
+    const u = UNIT[gp.type];
+    const col = hex(COUNTRIES[gp.tag].color);
+    const sel = gp.ds.some(d => this.selected.has(d.id));
+    const rel = gp.tag === g.player ? "self" : g.relation(g.player, gp.tag);
+    ctx.globalAlpha = moving ? 0.92 : 1;
+    ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(x + 2, y + 2, w, h);
+    ctx.fillStyle = rgb(col, 0.85); ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = u.color; ctx.fillRect(x, y, 20, h);
+    drawUnitIcon(ctx, gp.type, x + 2, y + 3, 16, h - 6, "#111");
+    ctx.fillStyle = "#fff"; ctx.textBaseline = "middle"; ctx.textAlign = "left";
+    ctx.font = "700 12px Inter, system-ui, sans-serif";
+    ctx.fillText(String(gp.ds.length), x + 23, y + h / 2);
+    if (w >= 50) { ctx.font = "600 9px Inter, system-ui, sans-serif"; ctx.fillStyle = "rgba(255,255,255,0.85)"; ctx.textAlign = "right"; ctx.fillText(u.short, x + w - 3, y + h / 2); }
+    ctx.lineWidth = sel ? 2.5 : 1.2;
+    ctx.strokeStyle = sel ? "#ffe27a" : rel === "enemy" ? "#ff4a3d" : rel === "self" ? "#f1f1f1" : rel === "ally" ? "#7fd4ff" : "#222";
+    ctx.strokeRect(x, y, w, h);
+    const str = gp.ds.reduce((a, d) => a + d.str, 0) / gp.ds.length;
+    const org = gp.ds.reduce((a, d) => a + d.org, 0) / gp.ds.length;
+    ctx.fillStyle = "#111"; ctx.fillRect(x, y + h, w, u.domain === "land" ? 4 : 2);
+    ctx.fillStyle = "#5ed06a"; ctx.fillRect(x, y + h, w * Math.max(0, str), 2);
+    if (u.domain === "land") { ctx.fillStyle = "#e8c24a"; ctx.fillRect(x, y + h + 2, w * Math.max(0, org), 2); }
+    if (u.domain === "air" && gp.ds.some(d => d.mission != null && g.hourCount - d.mission < 2)) { ctx.fillStyle = "#ff6a4a"; ctx.beginPath(); ctx.arc(x + w - 4, y + 4, 3, 0, Math.PI * 2); ctx.fill(); }
+    ctx.globalAlpha = 1;
+    this.counterRects.push({ x, y, w, h: h + 4, tag: gp.tag, prov: gp.prov, type: gp.type, ids: gp.ds.map(d => d.id) });
   }
 
   drawBattles() {
@@ -301,4 +352,31 @@ function star(ctx, x, y, r) {
     i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
   }
   ctx.closePath();
+}
+
+export function drawUnitIcon(ctx, type, x, y, w, h, color = "#111") {
+  ctx.save();
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 1.5; ctx.lineJoin = "round"; ctx.lineCap = "round";
+  const cx = x + w / 2, cy = y + h / 2;
+  if (type === "inf" || type === "at" || type === "tank" || type === "arm") {
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    ctx.beginPath();
+    if (type === "inf") { ctx.moveTo(x + 1, y + 1); ctx.lineTo(x + w - 1, y + h - 1); ctx.moveTo(x + w - 1, y + 1); ctx.lineTo(x + 1, y + h - 1); ctx.stroke(); }
+    else if (type === "at") { ctx.moveTo(x + 2, y + h - 1.5); ctx.lineTo(cx, y + 2); ctx.lineTo(x + w - 2, y + h - 1.5); ctx.stroke(); }
+    else if (type === "tank") { ctx.ellipse(cx, cy, w * 0.33, h * 0.27, 0, 0, Math.PI * 2); ctx.stroke(); }
+    else { ctx.ellipse(cx, cy, w * 0.34, h * 0.3, 0, 0, Math.PI * 2); ctx.fill(); }
+  } else if (type === "ftr" || type === "bmb") {
+    const big = type === "bmb";
+    ctx.beginPath();
+    ctx.moveTo(cx, y); ctx.lineTo(cx, y + h);
+    ctx.moveTo(x + (big ? 0 : 2), cy - (big ? 0 : 1)); ctx.lineTo(x + w - (big ? 0 : 2), cy - (big ? 0 : 1));
+    ctx.moveTo(cx - (big ? 4 : 3), y + h - 1); ctx.lineTo(cx + (big ? 4 : 3), y + h - 1);
+    ctx.lineWidth = big ? 2.6 : 1.8; ctx.stroke();
+    if (big) { ctx.beginPath(); ctx.arc(x + 4, cy + 1.5, 1.3, 0, Math.PI * 2); ctx.arc(x + w - 4, cy + 1.5, 1.3, 0, Math.PI * 2); ctx.fill(); }
+  } else if (type === "ship") {
+    ctx.beginPath();
+    ctx.moveTo(x, cy + 1); ctx.lineTo(x + w, cy + 1); ctx.lineTo(x + w - 3, y + h); ctx.lineTo(x + 3, y + h); ctx.closePath(); ctx.fill();
+    ctx.fillRect(cx - 3, cy - 3, 6, 4); ctx.fillRect(cx - 0.75, y, 1.5, h / 2);
+  }
+  ctx.restore();
 }

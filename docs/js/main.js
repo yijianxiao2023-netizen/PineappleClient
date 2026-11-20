@@ -1,17 +1,30 @@
-import { COUNTRIES, UNIT, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS } from "./data.js";
+import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS } from "./data.js";
 import { Game, dateStr } from "./sim.js";
 import { runAI, aiAcceptsFaction } from "./ai.js";
-import { MapView } from "./render.js";
+import { MapView, drawUnitIcon } from "./render.js";
 
 const $ = id => document.getElementById(id);
-const SPEEDS = [0, 4, 12, 36, 96, 240];
+const SPEEDS = [0, 2, 4, 8, 20, 60];
 const END = Date.UTC(1950, 0, 1);
 const fmt = n => n >= 10000 ? (n / 1000).toFixed(0) + "k" : n >= 1000 ? (n / 1000).toFixed(1) + "k" : Math.floor(n).toString();
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const flag = tag => `<span class="swatch" style="background:${COUNTRIES[tag].color}"></span>`;
 const TECH = Object.fromEntries(TECHS.map(t => [t.id, t]));
+const iconCache = {};
+function icon(type, size = 22) {
+  const key = type + size;
+  if (!iconCache[key]) {
+    const c = document.createElement("canvas"); c.width = c.height = size * 2;
+    const x = c.getContext("2d"); x.scale(2, 2);
+    x.fillStyle = UNIT[type].color; x.fillRect(0, 0, size, size);
+    drawUnitIcon(x, type, 3, 4, size - 6, size - 8, "#111");
+    iconCache[key] = c.toDataURL();
+  }
+  return `<img class="uicon" src="${iconCache[key]}" width="${size}" height="${size}" alt="${UNIT[type].name}">`;
+}
+const money = n => "$" + fmt(n);
 
-let MAP, game, view, player = null, speed = 0, lastSpeed = 2, tab = null, picked = null;
+let MAP, game, view, player = null, speed = 0, lastSpeed = 3, tab = null, picked = null;
 let endShown = false, acc = 0, lastFrame = performance.now(), lastHud = 0, lastPanel = 0, panelDay = -1, infoDay = -1;
 const canvas = $("map");
 
@@ -34,7 +47,7 @@ function buildStart() {
   $("majors").innerHTML = majors.map(t => {
     const c = COUNTRIES[t];
     return `<button class="nation-card" data-tag="${t}" style="--c:${c.color}"><div class="diff">${diff[t]}</div><div class="n">${c.name}</div><div class="f">${facName(t)} · ${IDEOLOGY[c.ideology].name}</div>
-      <div class="st"><span>Civ. factories</span><b>${c.civ}</b><span>Mil. factories</span><b>${c.mil}</b><span>Divisions</span><b>${c.divs}</b><span>Navy</span><b>${c.navy}</b></div></button>`;
+      <div class="st"><span>Civ. factories</span><b>${c.civ}</b><span>Mil. factories</span><b>${c.mil}</b><span>Divisions</span><b>${c.divs}</b><span>Fleets</span><b>${Math.round(c.navy / 10)}</b></div></button>`;
   }).join("");
   const minors = Object.keys(COUNTRIES).filter(t => !majors.includes(t)).sort((a, b) => COUNTRIES[a].name.localeCompare(COUNTRIES[b].name));
   $("minors").innerHTML = minors.map(t => `<button class="nation-card" data-tag="${t}" style="--c:${COUNTRIES[t].color}"><div class="n">${COUNTRIES[t].name}</div><div class="f">${facName(t)}</div></button>`).join("");
@@ -105,6 +118,7 @@ function setupHud() {
   $("panelBody").addEventListener("input", onPanelInput);
   $("info").addEventListener("click", onPanelClick);
   bindTips(document.body);
+  $("legend").innerHTML = `<div class="lg-head">Units <span class="muted">(L)</span></div>` + UNIT_ORDER.map(t => `<div class="lg" data-tip="<b>${UNIT[t].name}</b><br>${esc(UNIT[t].desc)}">${icon(t, 20)}<span>${UNIT[t].name}</span></div>`).join("");
   updateHud();
 }
 
@@ -123,14 +137,16 @@ function updateHud() {
   const prod = c.milEff * 4.5 * (1 + (c.mods.output || 0));
   const R = (k, v, tip, warn) => `<div class="r ${warn ? "warn" : ""}" data-tip="${esc(tip)}"><span class="k">${k}</span><span class="v">${v}</span></div>`;
   $("tbRes").innerHTML =
+    R("Treasury", `${money(c.money)} <small>+${Math.round(c.income + c.civEff * 0.4)}</small>`, `<b>Money</b><br>Pays for new units and buildings. You earn it every day from the land you control (${c.provCount} provinces) and from your civilian factories. More land means more money.`, c.money < 250) +
     R("Political", `${Math.floor(c.pp)} <small>+${(2 + (c.mods.ppGain || 0)).toFixed(1)}</small>`, "<b>Political power</b><br>Spent on war goals and guarantees.") +
-    R("Civilian", `${c.civEff.toFixed(0)}`, `<b>Civilian factories</b><br>Build new factories and forts. ${Math.round(c.civEff * 5 * (1 + (c.mods.construction || 0)))} construction points per day.`) +
-    R("Military", `${c.milEff.toFixed(0)}`, `<b>Military factories</b><br>Produce ${Math.round(prod)} production points per day of infantry equipment and tanks.`) +
+    R("Civilian", `${c.civEff.toFixed(0)}`, `<b>Civilian factories</b><br>Build new factories and forts. ${Math.round(c.civEff * 5 * (1 + (c.mods.construction || 0)))} construction points per day. Every province you control adds a little industry, and captured factories work for you.`) +
+    R("Military", `${c.milEff.toFixed(0)}`, `<b>Military factories</b><br>Produce ${Math.round(prod)} production points per day of equipment, tanks and aircraft. More land means more factories, which means more gear.`) +
     R("Manpower", fmt(c.manpower * 1000), "<b>Manpower</b><br>Needed to train and reinforce divisions.", c.manpower < 20) +
     R("Equipment", fmt(c.eqInf), "<b>Infantry equipment</b><br>Each infantry division needs 1,000.", c.eqInf < 500) +
-    R("Tanks", fmt(c.tanks), "<b>Tanks</b><br>Each armored division needs 150. Unlock with Light Tanks research.") +
-    R("Divisions", `${divs.length}${c.training.length ? ` <small>+${c.training.length}</small>` : ""}`, "<b>Divisions</b><br>Divisions in the field, plus those in training.") +
-    R("Navy", `${game.navyPower(player)}`, "<b>Naval strength</b> (you and your allies)<br>Sea invasions need at least 90% of the enemy's naval strength.");
+    R("Tanks", fmt(c.tanks), "<b>Tanks</b><br>Light tank divisions need 100, armored divisions need 250.") +
+    R("Aircraft", fmt(c.planes), "<b>Aircraft</b><br>Fighters need 100, bombers need 150.") +
+    R("Army", `${divs.length}${c.training.length ? ` <small>+${c.training.length}</small>` : ""}`, "<b>Land divisions</b><br>Divisions in the field, plus all units in training.") +
+    R("Navy", `${game.navyPower(player)}`, "<b>Naval strength</b> (your fleets plus your allies')<br>Sea invasions need at least 90% of the enemy's naval strength.");
   $("tbDate").textContent = dateStr(game.time);
   const alert = (t, on) => document.querySelector(`#sidebar [data-tab=${t}]`).classList.toggle("alert", on);
   alert("focus", !c.focus && game.focusTree(player).some(f => game.focusAvailable(c, f)));
@@ -198,7 +214,7 @@ function renderProduction() {
   const cpts = Math.round(c.civEff * 5 * (1 + (c.mods.construction || 0)));
   const prod = c.milEff * 4.5 * (1 + (c.mods.output || 0));
   const armor = c.techs.has("tank1");
-  const share = armor ? c.infShare : 1;
+  const tankS = armor ? c.share.tank : 0, airS = c.share.air, infS = 1 - tankS - airS;
   const queue = c.construction.map((it, i) => {
     const p = game.P[it.prov], cost = BUILD[it.type].cost;
     const perDay = Math.min(75 * (1 + (c.mods.construction || 0)), cpts);
@@ -213,41 +229,51 @@ function renderProduction() {
   </div></div>
   <div class="sec"><h4>Construction</h4>
     <div class="grid2" style="margin-bottom:8px">
-      <button class="btn" data-act="build" data-type="civ" data-tip="<b>Civilian factory</b><br>${BUILD.civ.cost} points. Speeds up future construction.">+ Civilian factory</button>
-      <button class="btn" data-act="build" data-type="mil" data-tip="<b>Military factory</b><br>${BUILD.mil.cost} points. Produces equipment and tanks.">+ Military factory</button>
-      <button class="btn" data-act="build" data-type="fort" data-tip="<b>Land fort</b><br>${BUILD.fort.cost} points. +15% defense per level, up to 5.">+ Land fort</button>
+      <button class="btn" data-act="build" data-type="civ" data-tip="<b>Civilian factory</b> · ${money(BUILD.civ.money)}<br>${BUILD.civ.cost} points. Speeds up future construction and earns money.">+ Civilian factory</button>
+      <button class="btn" data-act="build" data-type="mil" data-tip="<b>Military factory</b> · ${money(BUILD.mil.money)}<br>${BUILD.mil.cost} points. Produces equipment, tanks and aircraft.">+ Military factory</button>
+      <button class="btn" data-act="build" data-type="fort" data-tip="<b>Land fort</b> · ${money(BUILD.fort.money)}<br>${BUILD.fort.cost} points. +15% defense per level, up to 5.">+ Land fort</button>
       <button class="btn" data-act="autobuild" data-tip="Queue a military factory in the best free spot.">Auto-build</button>
     </div>${queue}</div>
   <div class="sec"><h4>Military production <small>${Math.round(prod)} points / day</small></h4>
-    ${armor ? `<div style="display:flex;justify-content:space-between" class="muted"><span>Infantry equipment ${Math.round(share * 100)}%</span><span>Tanks ${Math.round((1 - share) * 100)}%</span></div><input type="range" min="0" max="100" value="${Math.round(share * 100)}" data-act="share">` : `<div class="muted">All output goes to infantry equipment. Research <b>Light Tanks</b> to build tanks.</div>`}
-    <div class="kv" style="margin-top:8px"><span class="k">Infantry equipment</span><span>${fmt(c.eqInf)} (+${Math.round(prod * share / 0.5)}/day)</span><span class="k">Tanks</span><span>${fmt(c.tanks)}${armor ? ` (+${(prod * (1 - share) / 4).toFixed(1)}/day)` : ""}</span></div>
+    <div class="muted" style="margin-bottom:4px">Split your military factories between equipment, tanks and aircraft.</div>
+    <div class="kv"><span class="k">Tanks ${Math.round(tankS * 100)}%</span>${armor ? `<input type="range" min="0" max="80" value="${Math.round(tankS * 100)}" data-act="shareTank">` : `<span class="muted">Research Light Tanks first</span>`}
+    <span class="k">Aircraft ${Math.round(airS * 100)}%</span><input type="range" min="0" max="80" value="${Math.round(airS * 100)}" data-act="shareAir">
+    <span class="k">Equipment ${Math.round(infS * 100)}%</span><span class="muted">the rest</span></div>
+    <div class="kv" style="margin-top:8px"><span class="k">Infantry equipment</span><span>${fmt(c.eqInf)} (+${Math.round(prod * infS / 0.5)}/day)</span><span class="k">Tanks</span><span>${fmt(c.tanks)} (+${(prod * tankS / 4).toFixed(1)}/day)</span><span class="k">Aircraft</span><span>${fmt(c.planes)} (+${(prod * airS / 2.5).toFixed(1)}/day)</span></div>
   </div>`;
 }
 
 function renderArmy() {
   const c = game.c(player);
-  const divs = game.divsOf(player);
-  const inf = divs.filter(d => d.type === "inf").length, arm = divs.length - inf;
-  const avgStr = divs.length ? divs.reduce((s, d) => s + d.str, 0) / divs.length : 0;
-  const train = c.training.map(t => `<div class="row"><div class="grow"><div class="t">${UNIT[t.type].name} division</div><div class="s">${t.days} days left</div><div class="bar"><i style="width:${(1 - t.days / t.total) * 100}%"></i></div></div></div>`).join("") || `<div class="muted">No divisions in training.</div>`;
-  const btn = (type, n) => `<button class="btn ${n === 1 ? "gold" : ""}" data-act="train" data-type="${type}" data-n="${n}" ${game.canTrain(player, type) ? "" : "disabled"}>Train ${n > 1 ? n + "× " : ""}${UNIT[type].name}</button>`;
+  const units = game.unitsOf(player);
+  const count = t => units.filter(d => d.type === t).length;
+  const land = units.filter(d => d.domain === "land");
+  const avgStr = land.length ? land.reduce((s, d) => s + d.str, 0) / land.length : 0;
+  const train = c.training.map(t => `<div class="row">${icon(t.type)}<div class="grow"><div class="t">${UNIT[t.type].name}</div><div class="s">${t.days} days left</div><div class="bar"><i style="width:${(1 - t.days / t.total) * 100}%"></i></div></div></div>`).join("") || `<div class="muted">Nothing in training.</div>`;
+  const cards = UNIT_ORDER.map(t => {
+    const u = UNIT[t], block = game.trainBlock(player, t);
+    const cost = [money(u.money), u.eq ? `${fmt(u.eq)} equip.` : "", u.tanks ? `${u.tanks} tanks` : "", u.planes ? `${u.planes} aircraft` : "", `${u.mp}k men`, `${u.days} days`].filter(Boolean).join(" · ");
+    const speed = (u.hours / 8).toFixed(u.hours < 16 ? 1 : 0);
+    return `<div class="row unitcard">${icon(t, 30)}<div class="grow"><div class="t">${u.name} <span class="muted">· ${count(t)} active</span></div><div class="s">${esc(u.desc)}</div><div class="s">${cost} · ~${speed}s per province at speed 3</div>${block ? `<div class="s" style="color:#ff9a7a">${esc(block)}</div>` : ""}</div>
+      <div style="display:flex;flex-direction:column;gap:3px"><button class="btn sm gold" data-act="train" data-type="${t}" data-n="1" ${block ? "disabled" : ""}>Train</button><button class="btn sm" data-act="train" data-type="${t}" data-n="5" ${block ? "disabled" : ""}>×5</button></div></div>`;
+  }).join("");
   return `
   <div class="sec"><h4>Forces</h4><div class="kv">
-    <span class="k">Divisions</span><span>${divs.length} (${inf} infantry, ${arm} armored)</span>
-    <span class="k">Average strength</span><span>${Math.round(avgStr * 100)}%</span>
+    <span class="k">Land divisions</span><span>${land.length} · average strength ${Math.round(avgStr * 100)}%</span>
+    <span class="k">Air wings</span><span>${count("ftr")} fighters, ${count("bmb")} bombers</span>
+    <span class="k">Fleets</span><span>${count("ship")} (naval strength ${game.navyPower(player)} with allies)</span>
+    <span class="k">Treasury</span><span>${money(c.money)}</span>
     <span class="k">Manpower</span><span>${fmt(c.manpower * 1000)}</span>
-    <span class="k">Equipment</span><span>${fmt(c.eqInf)} infantry equipment, ${fmt(c.tanks)} tanks</span>
-    <span class="k">Battles won / lost</span><span>${c.kills} divisions destroyed / ${c.losses} lost</span>
+    <span class="k">Units destroyed / lost</span><span>${c.kills} / ${c.losses}</span>
   </div></div>
-  <div class="sec"><h4>Train divisions</h4>
-    <div class="grid2">${btn("inf", 1)}${btn("inf", 5)}${btn("arm", 1)}${btn("arm", 3)}</div>
-    <p class="muted" style="margin:8px 0 0;line-height:1.5">Infantry: ${UNIT.inf.eq} equipment, ${UNIT.inf.mp}k men, ${UNIT.inf.days} days. Strong defenders.<br>Armored: ${UNIT.arm.eq} equipment + ${UNIT.arm.tanks} tanks, ${UNIT.arm.mp}k men, ${UNIT.arm.days} days. Fast and hard-hitting, weaker in rough terrain.<br>New divisions appear at your capital.</p>
-  </div>
+  <div class="sec"><h4>Train units <small>Land units appear at your capital, fleets at your main port</small></h4>${cards}</div>
   <div class="sec"><h4>In training</h4>${train}</div>
   <div class="sec"><h4>Orders</h4><div class="grid2">
-    <button class="btn" data-act="selall">Select all divisions</button>
-    <button class="btn" data-act="selidle">Select idle divisions</button>
-  </div><p class="muted" style="line-height:1.5">Click a counter to select it, or Shift-drag to box-select. Then <b>right-click</b> a province to move or attack. On touch screens, tap a province.</p></div>`;
+    <button class="btn" data-act="selall">Select all land units</button>
+    <button class="btn" data-act="selidle">Select idle land units</button>
+    <button class="btn" data-act="selair">Select all aircraft</button>
+    <button class="btn" data-act="selships">Select all fleets</button>
+  </div><p class="muted" style="line-height:1.5">Click a counter to select it, or Shift-drag to box-select. Then <b>right-click</b> a province to move or attack. Aircraft fly to any friendly province and support battles within the dashed circle. Fleets sail between friendly ports.</p></div>`;
 }
 
 function renderDiplomacy() {
@@ -289,6 +315,10 @@ function renderHelp() {
     <li>Click a division counter to select it. <kbd>Shift</kbd>-click adds more, <kbd>Shift</kbd>-drag box-selects.</li>
     <li><b>Right-click</b> a province to move or attack with the selected divisions. Paths go around neutral countries.</li>
     <li><kbd>F</kbd> Focus · <kbd>R</kbd> Research · <kbd>P</kbd> Industry · <kbd>A</kbd> Army · <kbd>D</kbd> Diplomacy · <kbd>M</kbd> map mode · <kbd>Esc</kbd> deselect.</li></ul>
+  <h4>Units</h4><ul>
+    ${UNIT_ORDER.map(t => `<li style="list-style:none;margin-left:-18px;display:flex;gap:8px;align-items:center">${icon(t, 22)}<span><b>${UNIT[t].name}</b>: ${esc(UNIT[t].desc)}</span></li>`).join("")}
+    <li>Every counter shows the unit type icon, how many units are in it, and green (strength) and yellow (organization) bars. A white border means yours, blue means an ally, red means an enemy.</li>
+    <li>Movement takes time. At speed 3, infantry needs about 5 seconds per province, tanks about 3, and aircraft and fleets about 1 to 2. Rough terrain is slower.</li></ul>
   <h4>Warfare</h4><ul>
     <li>Moving into a province with enemy divisions starts a battle. The bar under the swords shows which side is winning.</li>
     <li>Defenders get bonuses from terrain, forts and digging in. Attack with about 2 to 1 odds or bring armor.</li>
@@ -297,12 +327,16 @@ function renderHelp() {
     <li>Sea crossings are slow. Landing on an enemy coast needs a navy at least 90% as strong as theirs.</li>
     <li>A country surrenders when it loses most of its core territory, or its capital plus a large share. Its land goes to the occupiers.</li></ul>
   <h4>Economy</h4><ul>
-    <li>Civilian factories build things. Military factories make equipment. Captured factories work at reduced output.</li>
+    <li><b>More land means more factories, gear and money.</b> Every province you control adds industry and daily income, and you can use the factories you capture.</li>
+    <li>Money pays for every unit and building. Civilian factories build, and military factories make equipment, tanks and aircraft.</li>
     <li>Divisions need equipment and manpower to train and to refill losses.</li></ul></div>`;
 }
 
 function onPanelInput(e) {
-  if (e.target.dataset.act === "share") { game.c(player).infShare = +e.target.value / 100; }
+  const c = game.c(player);
+  if (e.target.dataset.act === "shareTank") { c.share.tank = +e.target.value / 100; if (c.share.tank + c.share.air > 0.9) c.share.air = 0.9 - c.share.tank; }
+  if (e.target.dataset.act === "shareAir") { c.share.air = +e.target.value / 100; if (c.share.tank + c.share.air > 0.9) c.share.tank = Math.max(0, 0.9 - c.share.air); }
+  clearTimeout(onPanelInput.t); onPanelInput.t = setTimeout(renderPanel, 250);
 }
 
 function onPanelClick(e) {
@@ -319,12 +353,16 @@ function onPanelClick(e) {
   else if (a === "build") setBuildMode(el.dataset.type);
   else if (a === "autobuild") {
     const cands = game.P.filter(p => game.canBuild(player, "mil", p.id)).sort((x, y) => y.vp - x.vp);
-    if (cands.length) { game.queueBuild(player, "mil", cands[0].id); toast(`Military factory queued in ${cands[0].name}.`); } else toast("No free factory slots. Build forts or capture more land.");
+    if (!cands.length) toast("No free factory slots. Capture more land to get more!");
+    else if (game.queueBuild(player, "mil", cands[0].id)) toast(`Military factory queued in ${cands[0].name}.`);
+    else toast(`Not enough money (${money(BUILD.mil.money)} needed).`);
   }
   else if (a === "unbuild") c.construction.splice(+el.dataset.i, 1);
-  else if (a === "train") { let n = 0; for (let i = 0; i < +el.dataset.n; i++) if (game.train(player, el.dataset.type)) n++; if (!n) toast("Not enough equipment or manpower."); }
+  else if (a === "train") { let n = 0; for (let i = 0; i < +el.dataset.n; i++) if (game.train(player, el.dataset.type)) n++; if (!n) toast(game.trainBlock(player, el.dataset.type) || "Can't train that right now."); else toast(`Training ${n} × ${UNIT[el.dataset.type].name}`); }
   else if (a === "selall") { view.selected = new Set(game.divsOf(player).map(d => d.id)); showDivInfo(); }
   else if (a === "selidle") { view.selected = new Set(game.divsOf(player).filter(d => !d.path.length).map(d => d.id)); showDivInfo(); }
+  else if (a === "selair") { view.selected = new Set(game.divsOf(player, "air").map(d => d.id)); showDivInfo(); }
+  else if (a === "selships") { view.selected = new Set(game.divsOf(player, "sea").map(d => d.id)); showDivInfo(); }
   else if (a === "justify") { if (game.justify(player, el.dataset.t)) toast(`Justifying a war goal against ${COUNTRIES[el.dataset.t].name}…`); }
   else if (a === "declare") { if (game.declareWar(player, el.dataset.t)) setSpeed(0); }
   else if (a === "guarantee") game.guarantee(player, el.dataset.t);
@@ -340,7 +378,7 @@ function onPanelClick(e) {
   else if (a === "found") game.createFaction(player, `${c.adj} Pact`);
   else if (a === "stop") { for (const id of view.selected) { const d = game.divs.get(id); if (d) { d.path = []; d.attacking = null; } } }
   else if (a === "desel") { view.selected.clear(); $("info").classList.add("hidden"); }
-  else if (a === "selprov") { const p = game.P[+el.dataset.p]; view.selected = new Set([...p.divs].filter(i => game.divs.get(i)?.tag === player)); showDivInfo(); }
+  else if (a === "selprov") { const p = game.P[+el.dataset.p]; view.selected = new Set([...p.divs, ...p.air, ...p.ships].filter(i => game.divs.get(i)?.tag === player)); showDivInfo(); }
   else if (a === "pbuild") { if (game.queueBuild(player, el.dataset.type, +el.dataset.p)) toast(`${BUILD[el.dataset.type].name} queued.`); showProvInfo(game.P[+el.dataset.p]); }
   else if (a === "movehere") { moveSelected(game.P[+el.dataset.p]); }
   renderPanel(); updateHud(); view.dirty = true;
@@ -359,7 +397,9 @@ function showProvInfo(p) {
   el.classList.remove("hidden");
   const own = p.owner === player;
   const here = new Map();
-  for (const id of p.divs) { const d = game.divs.get(id); if (d) here.set(d.tag, (here.get(d.tag) || 0) + 1); }
+  const byType = [];
+  for (const id of [...p.divs, ...p.air, ...p.ships]) { const d = game.divs.get(id); if (!d) continue; here.set(d.tag, (here.get(d.tag) || 0) + 1); }
+  for (const t of UNIT_ORDER) { const tags = new Map(); for (const id of [...p.divs, ...p.air, ...p.ships]) { const d = game.divs.get(id); if (d && d.type === t) tags.set(d.tag, (tags.get(d.tag) || 0) + 1); } for (const [tg, n] of tags) byType.push(`<span style="display:inline-flex;align-items:center;gap:3px;margin-right:8px">${icon(t, 16)}${flag(tg)}${n}</span>`); }
   const rel = game.relation(player, p.ctrl);
   const queued = game.c(p.owner).construction.filter(i => i.prov === p.id).length;
   el.innerHTML = `<h3>${flag(p.owner)} ${esc(p.name)}</h3><div class="sub">${TERRAIN[p.terrain].name}${p.vp ? " · Victory points " + p.vp : ""}${p.capital && p.capital === p.owner ? " · Capital" : ""}</div>
@@ -368,9 +408,11 @@ function showProvInfo(p) {
   <span class="k">Relation</span><span><span class="chip ${p.ctrl === player ? "self" : rel}">${p.ctrl === player ? "Yours" : rel}</span></span>
   <span class="k">Factories</span><span>${p.civ} civilian, ${p.mil} military (${p.slots} slots${queued ? `, ${queued} queued` : ""})</span>
   <span class="k">Fort level</span><span>${p.fort}</span>
-  <span class="k">Divisions</span><span>${[...here].map(([t, n]) => flag(t) + " " + n).join(" &nbsp;") || "None"}</span></div>
+  <span class="k">Income</span><span>${money((0.5 + 0.3 * p.vp) * (p.owner === p.ctrl ? 1 : 0.6))}/day for its controller</span>
+  <span class="k">Coast</span><span>${p.coastal ? "Coastal (fleets can dock)" : "Inland"}</span>
+  <span class="k">Units</span><span>${byType.join("") || "None"}</span></div>
   <div class="acts">
-    ${here.get(player) ? `<button class="btn sm" data-act="selprov" data-p="${p.id}">Select my divisions</button>` : ""}
+    ${here.get(player) ? `<button class="btn sm" data-act="selprov" data-p="${p.id}">Select my units</button>` : ""}
     ${view.selected.size ? `<button class="btn sm gold" data-act="movehere" data-p="${p.id}">Move selected here</button>` : ""}
     ${own ? ["civ", "mil", "fort"].map(t => `<button class="btn sm" data-act="pbuild" data-type="${t}" data-p="${p.id}" ${game.canBuild(player, t, p.id) ? "" : "disabled"}>+ ${t === "civ" ? "Civilian" : t === "mil" ? "Military" : "Fort"}</button>`).join("") : ""}
   </div>`;
@@ -383,15 +425,16 @@ function showDivInfo() {
   view.selected = new Set(ds.map(d => d.id));
   if (!ds.length) { el.classList.add("hidden"); return; }
   el.classList.remove("hidden");
-  const avg = k => Math.round(ds.reduce((s, d) => s + d[k], 0) / ds.length * 100);
-  const inf = ds.filter(d => d.type === "inf").length;
   const sup = game.c(player).supplied;
-  const rows = ds.slice(0, 14).map(d => `<div class="divrow"><b>${UNIT[d.type].short}</b><div><div class="bar green"><i style="width:${d.str * 100}%"></i></div><div class="bar"><i style="width:${d.org * 100}%"></i></div></div><span class="muted">${esc(game.P[d.prov].name)}${d.attacking != null ? " ⚔" : d.path.length ? " →" : ""}${sup.has(d.prov) ? "" : " ⚠"}</span></div>`).join("");
-  el.innerHTML = `<h3>${flag(player)} ${ds.length} division${ds.length > 1 ? "s" : ""} selected</h3><div class="sub">${inf} infantry · ${ds.length - inf} armored</div>
-  <div class="kv"><span class="k">Strength</span><span>${avg("str")}%</span><span class="k">Organization</span><span>${avg("org")}%</span>
-  <span class="k">Supply</span><span>${ds.every(d => sup.has(d.prov)) ? "Supplied" : '<b style="color:#ff8a7a">Some out of supply</b>'}</span></div>
+  const land = ds.filter(d => d.domain === "land");
+  const avg = (arr, k) => arr.length ? Math.round(arr.reduce((s, d) => s + d[k], 0) / arr.length * 100) : 0;
+  const summary = UNIT_ORDER.map(t => { const n = ds.filter(d => d.type === t).length; return n ? `<span style="display:inline-flex;align-items:center;gap:4px;margin:0 10px 4px 0">${icon(t, 20)}<b>${n}</b> ${UNIT[t].name}</span>` : ""; }).join("");
+  const rows = ds.slice(0, 14).map(d => `<div class="divrow">${icon(d.type, 18)}<div><div class="bar green"><i style="width:${d.str * 100}%"></i></div>${d.domain === "land" ? `<div class="bar"><i style="width:${d.org * 100}%"></i></div>` : ""}</div><span class="muted">${esc(game.P[d.prov].name)}${d.attacking != null ? " ⚔" : d.path.length ? " → " + esc(game.P[d.path[d.path.length - 1].id].name) : ""}${d.domain === "land" && !sup.has(d.prov) ? " ⚠" : ""}</span></div>`).join("");
+  el.innerHTML = `<h3>${flag(player)} ${ds.length} unit${ds.length > 1 ? "s" : ""} selected</h3><div style="display:flex;flex-wrap:wrap;margin-bottom:6px">${summary}</div>
+  ${land.length ? `<div class="kv"><span class="k">Strength</span><span>${avg(land, "str")}%</span><span class="k">Organization</span><span>${avg(land, "org")}%</span>
+  <span class="k">Supply</span><span>${land.every(d => sup.has(d.prov)) ? "Supplied" : '<b style="color:#ff8a7a">Some out of supply</b>'}</span></div>` : ""}
   <div style="margin-top:8px">${rows}${ds.length > 14 ? `<div class="muted">…and ${ds.length - 14} more</div>` : ""}</div>
-  <div class="muted" style="margin-top:8px">Right-click a province to move or attack.</div>
+  <div class="muted" style="margin-top:8px">Right-click a province to move${land.length ? " or attack" : ""}.${ds.some(d => d.domain === "air") ? " Aircraft can only fly to friendly provinces." : ""}${ds.some(d => d.domain === "sea") ? " Fleets can only dock in friendly coastal provinces." : ""}</div>
   <div class="acts"><button class="btn sm" data-act="stop">Stop</button><button class="btn sm" data-act="desel">Deselect</button></div>`;
   infoDay = Math.floor(game.hourCount / 24);
   view.dirty = true;
@@ -400,7 +443,7 @@ function showDivInfo() {
 function moveSelected(p) {
   if (!view.selected.size || !p) return;
   const n = game.orderMove([...view.selected], p.id);
-  if (!n) toast("No route there. You can't enter neutral countries.");
+  if (!n) toast(view.selected.size && [...view.selected].every(i => game.divs.get(i)?.domain === "sea") ? "Fleets can only sail to friendly coastal provinces." : [...view.selected].every(i => game.divs.get(i)?.domain === "air") ? "Aircraft can only fly to friendly provinces." : "No route there. You can't enter neutral countries.");
   else if (game.atWar(player, p.ctrl)) toast(`${n} division${n > 1 ? "s" : ""} attacking ${p.name}`);
   view.dirty = true;
   showDivInfo();
@@ -439,7 +482,7 @@ canvas.addEventListener("pointerup", e => {
     const { x0, y0, x1, y1 } = view.box; view.box = null;
     if (d.moved) {
       const [ax, ay] = view.toWorld(Math.min(x0, x1), Math.min(y0, y1)), [bx, by] = view.toWorld(Math.max(x0, x1), Math.max(y0, y1));
-      for (const div of game.divsOf(player)) { const c = game.P[div.prov].c; if (c[0] >= ax && c[0] <= bx && c[1] >= ay && c[1] <= by) view.selected.add(div.id); }
+      for (const div of game.unitsOf(player)) { const c = game.P[div.prov].c; if (c[0] >= ax && c[0] <= bx && c[1] >= ay && c[1] <= by) view.selected.add(div.id); }
       showDivInfo(); view.dirty = true; return;
     }
   }
@@ -459,7 +502,7 @@ function handleClick(x, y, shift, ptype) {
   if (view.buildMode) {
     const p = view.provAt(x, y);
     if (p && game.queueBuild(player, view.buildMode, p.id)) { toast(`${BUILD[view.buildMode].name} queued in ${p.name}.`); if (tab === "production") renderPanel(); }
-    else toast("You can't build there.");
+    else toast(p && game.canBuild(player, view.buildMode, p.id) ? `Not enough money (${money(BUILD[view.buildMode].money)} needed).` : "You can't build there.");
     if (!shift) setBuildMode(null);
     view.dirty = true; return;
   }
@@ -467,7 +510,7 @@ function handleClick(x, y, shift, ptype) {
   if (ctr && ctr.tag === player) {
     if (!shift) view.selected.clear();
     const now = performance.now();
-    const ids = now - lastTap < 350 ? game.divsOf(player).filter(d => Math.hypot(game.P[d.prov].c[0] - game.P[ctr.prov].c[0], game.P[d.prov].c[1] - game.P[ctr.prov].c[1]) < 120).map(d => d.id) : ctr.ids;
+    const ids = now - lastTap < 350 ? game.divsOf(player, UNIT[ctr.type].domain).filter(d => d.type === ctr.type && Math.hypot(game.P[d.prov].c[0] - game.P[ctr.prov].c[0], game.P[d.prov].c[1] - game.P[ctr.prov].c[1]) < 120).map(d => d.id) : ctr.ids;
     lastTap = now;
     for (const id of ids) view.selected.add(id);
     view.selProv = null; showDivInfo(); return;
@@ -492,6 +535,7 @@ addEventListener("keydown", e => {
   else if (k === "d") openTab(tab === "diplomacy" ? null : "diplomacy");
   else if (k === "h" || k === "?") openTab(tab === "help" ? null : "help");
   else if (k === "m") toggleMode();
+  else if (k === "l") $("legend").classList.toggle("hidden");
   else if (k === "escape") { if (view.buildMode) setBuildMode(null); else if (view.selected.size) { view.selected.clear(); $("info").classList.add("hidden"); } else openTab(null); view.dirty = true; }
   else if (k === "+" || k === "=") view.zoomAt(view.vw / 2, view.vh / 2, 1.25);
   else if (k === "-") view.zoomAt(view.vw / 2, view.vh / 2, 0.8);
@@ -530,7 +574,8 @@ function loop(now) {
     acc += dt * SPEEDS[speed];
     let n = 0;
     while (acc >= 1 && n < 240) { game.tickHour(); acc--; n++; }
-    if (n) view.dirty = true;
+    view.frac = acc;
+    view.dirty = true;
     if (game.time >= END && !game.gameOver && !endShown) {
       endShown = true;
       const own = game.P.filter(p => p.owner === player).length;
