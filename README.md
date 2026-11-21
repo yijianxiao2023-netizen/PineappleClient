@@ -68,3 +68,9 @@ Map data: Natural Earth, via the `world-atlas` package.
 - Capturing a capital annexes the whole country and disbands its units. Capitals defend at double strength.
 - Each AI picks a strategy per match (Blitzkrieg, Broad Front, Defense in Depth, Encirclement, Attrition). Allies coordinate a joint offensive target, launch joint attacks, and send help when an ally's capital is threatened.
 - Research now includes extra armor (Reliability, High-Velocity Guns, Blitzkrieg, Mechanized, Super-Heavy), navy (Fire Control, Hulls, Submarines, Naval Radar, Carriers) and air (Strategic, Dive and Heavy Bombers, Escort Fighters, Jets) techs.
+
+## Fleets and naval landings
+
+- The sea is divided into water tiles (built by `tools/add_sea.mjs`). Fleets move only on water.
+- Select a fleet and press **Board nearby units** to load up to 3 land units within 3 tiles of it. Sail, press **Unload…**, then left-click a land tile within 3 tiles of the fleet to land them.
+- Land units can no longer cross water on their own. The AI ferries invasions with its fleets.
