@@ -1,10 +1,10 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795223631";
-import { Game, dateStr } from "./sim.js?v=1795223631";
-import { runAI, aiAcceptsFaction } from "./ai.js?v=1795223631";
-import { MapView, drawUnitIcon } from "./render.js?v=1795223631";
+import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795223937";
+import { Game, dateStr } from "./sim.js?v=1795223937";
+import { runAI, aiAcceptsFaction } from "./ai.js?v=1795223937";
+import { MapView, drawUnitIcon } from "./render.js?v=1795223937";
 
 const $ = id => document.getElementById(id);
-const SPEEDS = [0, 0.04, 0.08, 0.16, 0.4, 1.2];
+const SPEEDS = [0, 0.04, 0.08, 0.16, 0.4, 0.8];
 const END = Date.UTC(1950, 0, 1);
 const fmt = n => { const a = Math.abs(n), sg = n < 0 ? "-" : ""; return a >= 1e9 ? sg + (a / 1e9).toFixed(2) + "B" : a >= 1e7 ? sg + (a / 1e6).toFixed(0) + "M" : a >= 1e6 ? sg + (a / 1e6).toFixed(1) + "M" : a >= 1e4 ? sg + (a / 1000).toFixed(0) + "k" : a >= 1000 ? sg + (a / 1000).toFixed(1) + "k" : sg + Math.floor(a).toString(); };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -32,7 +32,7 @@ let battleLog = [], unread = 0, logFilter = "all", endShown = false, acc = 0, la
 const canvas = $("map");
 
 async function boot() {
-  const res = await fetch("data/map.json?v=1795223631");
+  const res = await fetch("data/map.json?v=1795223937");
   MAP = await res.json();
   const preview = new Game(MAP, { seed: 1 });
   view = new MapView(canvas, preview);
@@ -303,8 +303,8 @@ function renderArmy() {
     const cost = [money(k.money), k.eq ? `${fmt(k.eq)} equip.` : "", k.tanks ? `${k.tanks} tanks` : "", k.planes ? `${k.planes} aircraft` : "", `${k.mp}k men`, `${k.days} days`, `upkeep ${money(k.upkeep)}/day`].filter(Boolean).join(" · ");
     const old = units.filter(d => d.type === t && (d.tier || 1) < tier);
     const upc = old.length ? game.upgradeCost(player, old[0]) : null;
-    const speed = Math.round(u.hours / 0.16 / 60);
-    return `<div class="row unitcard">${icon(t, 30)}<div class="grow"><div class="t">${u.name} <span class="tier">Tier ${ROMAN[tier - 1]}</span> <span class="muted">· ${count(t)} active · ${Math.round(TIER_MULT[tier - 1] * 100)}% power</span></div><div class="s">${esc(u.desc)}</div><div class="s">${cost} · ~${speed} min per province at speed 3</div>${block ? `<div class="s" style="color:#ff9a7a">${esc(block)}</div>` : ""}${old.length ? `<div class="s" style="margin-top:4px">${old.length} older unit${old.length > 1 ? "s" : ""} below tier ${ROMAN[tier - 1]} · <button class="btn sm" data-act="upgrade" data-type="${t}">Upgrade (${money(upc.money)} each)</button></div>` : ""}${tier < 5 ? `<div class="s muted">Research the next ${u.name} tier to unlock tier ${ROMAN[tier]}.</div>` : ""}</div>
+    const speed = Math.round(u.hours / 40 / 0.04);
+    return `<div class="row unitcard">${icon(t, 30)}<div class="grow"><div class="t">${u.name} <span class="tier">Tier ${ROMAN[tier - 1]}</span> <span class="muted">· ${count(t)} active · ${Math.round(TIER_MULT[tier - 1] * 100)}% power</span></div><div class="s">${esc(u.desc)}</div><div class="s">${cost} · ~${speed}s per province at speed 1</div>${block ? `<div class="s" style="color:#ff9a7a">${esc(block)}</div>` : ""}${old.length ? `<div class="s" style="margin-top:4px">${old.length} older unit${old.length > 1 ? "s" : ""} below tier ${ROMAN[tier - 1]} · <button class="btn sm" data-act="upgrade" data-type="${t}">Upgrade (${money(upc.money)} each)</button></div>` : ""}${tier < 5 ? `<div class="s muted">Research the next ${u.name} tier to unlock tier ${ROMAN[tier]}.</div>` : ""}</div>
       <div style="display:flex;flex-direction:column;gap:3px"><button class="btn sm gold" data-act="train" data-type="${t}" data-n="1" ${block ? "disabled" : ""}>Train</button><button class="btn sm" data-act="train" data-type="${t}" data-n="5" ${block ? "disabled" : ""}>×5</button></div></div>`;
   }).join("");
   return `
@@ -375,8 +375,8 @@ function renderHelp() {
   <h4>Units</h4><ul>
     ${UNIT_ORDER.map(t => `<li style="list-style:none;margin-left:-18px;display:flex;gap:8px;align-items:center">${icon(t, 22)}<span><b>${UNIT[t].name}</b>: ${esc(UNIT[t].desc)}</span></li>`).join("")}
     <li>Every counter shows the unit type icon, how many units are in it, and green (strength) and yellow (organization) bars. A white border means yours, blue means an ally, red means an enemy.</li>
-    <li>Time: one game day takes 10 minutes at speed 1, 5 minutes at speed 2, 2.5 minutes at speed 3, 1 minute at speed 4 and 20 seconds at speed 5.</li>
-    <li>Movement takes time. Infantry needs about 40 game hours per province: about 17 minutes at speed 1, 4 minutes at speed 3 and 33 seconds at speed 5. Tanks are about twice as fast, aircraft and fleets faster still. Rough terrain is slower.</li></ul>
+    <li>Time: one game day takes 10 minutes at speed 1, 5 minutes at speed 2, 2.5 minutes at speed 3, 1 minute at speed 4 and 30 seconds at speed 5. Research never takes more than 42 game days (7 hours at speed 1).</li>
+    <li>Movement takes time. Infantry needs about 25 seconds per province at speed 1 (about 6 s at speed 3, about 1 s at speed 5). Tanks are about twice as fast, aircraft and fleets faster still. Rough terrain is slower.</li></ul>
   <h4>One unit per tile</h4><ul>
     <li>Each tile can hold <b>one</b> land unit (plus one air wing and one fleet). Units can't stack.</li>
     <li>New units appear on a free tile of your land, nearest your capital. You can only train when you have a free tile, so <b>more land means a bigger army</b>.</li>
@@ -876,10 +876,8 @@ function loopInner(now) {
     view.clamp(); view.dirty = true;
   }
   if (game && speed > 0 && !game.gameOver) {
-    acc += dt * SPEEDS[speed];
-    let n = 0;
-    while (acc >= 1 && n < 240) { game.tickHour(); acc--; n++; }
-    view.frac = acc;
+    game.advance(Math.min(dt, 0.25) * SPEEDS[speed]);
+    view.frac = 0;
     view.dirty = true;
     if (game.time >= END && !game.gameOver && !endShown) {
       endShown = true;
