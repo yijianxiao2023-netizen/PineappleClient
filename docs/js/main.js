@@ -1,7 +1,7 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795222643";
-import { Game, dateStr } from "./sim.js?v=1795222643";
-import { runAI, aiAcceptsFaction } from "./ai.js?v=1795222643";
-import { MapView, drawUnitIcon } from "./render.js?v=1795222643";
+import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795222749";
+import { Game, dateStr } from "./sim.js?v=1795222749";
+import { runAI, aiAcceptsFaction } from "./ai.js?v=1795222749";
+import { MapView, drawUnitIcon } from "./render.js?v=1795222749";
 
 const $ = id => document.getElementById(id);
 const SPEEDS = [0, 2, 4, 8, 20, 60];
@@ -32,7 +32,7 @@ let battleLog = [], unread = 0, logFilter = "all", endShown = false, acc = 0, la
 const canvas = $("map");
 
 async function boot() {
-  const res = await fetch("data/map.json?v=1795222643");
+  const res = await fetch("data/map.json?v=1795222749");
   MAP = await res.json();
   const preview = new Game(MAP, { seed: 1 });
   view = new MapView(canvas, preview);
