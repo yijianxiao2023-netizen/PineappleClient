@@ -1,6 +1,8 @@
-import { START_DATE, COUNTRIES, FACTIONS, TERRAIN, UNIT, BUILD, TECHS, GENERIC_FOCUS, NATIONAL_FOCUS, AIR_RANGE, TIER_MULT, TIER_COST, ROMAN, INCOME_SCALE, COST_SCALE, WAR_TAX } from "./data.js?v=1795223631";
+import { START_DATE, COUNTRIES, FACTIONS, TERRAIN, UNIT, BUILD, TECHS, GENERIC_FOCUS, NATIONAL_FOCUS, AIR_RANGE, TIER_MULT, TIER_COST, ROMAN, INCOME_SCALE, COST_SCALE, WAR_TAX } from "./data.js?v=1795223937";
 
-import { installDiplomacy } from "./diplo.js?v=1795223631";
+import { installDiplomacy } from "./diplo.js?v=1795223937";
+const MOVE_DIV = 40;
+const MAX_RESEARCH_DAYS = 42;
 const DAY = 86400000;
 const HOUR = 3600000;
 const TECH = Object.fromEntries(TECHS.map(t => [t.id, t]));
@@ -357,13 +359,13 @@ export class Game {
     const a = this.P[from], b = this.P[to];
     const dist = Math.hypot(a.c[0] - b.c[0], a.c[1] - b.c[1]);
     const u = UNIT[d.type];
-    if (u.domain !== "land") return Math.max(2, u.hours * dist / 38);
+    if (u.domain !== "land") return Math.max(0.05, u.hours * dist / 38 / MOVE_DIV);
     let h = UNIT[d.type].hours * TERRAIN[b.terrain].move * clamp(dist / 38, 0.6, 3.2);
     if (viaSea) h *= 3;
     if (this.atWar(d.tag, b.ctrl)) h *= 1.5;
     if (this.atWar(d.tag, b.ctrl) && this.countries[b.core]?.capital === b.id && b.ctrl === b.core) h *= 3;
     if (this.isWinter(b) && d.tag !== "SOV" && d.tag !== "FIN") h *= 1.3;
-    return h / (1 + this.mod(d.tag, "speed"));
+    return h / MOVE_DIV / (1 + this.mod(d.tag, "speed"));
   }
   isWinter(p) { const m = new Date(this.time).getUTCMonth(); return (m >= 10 || m <= 1) && p.c[1] < 820 && p.c[0] > 900; }
 
@@ -538,8 +540,48 @@ export class Game {
     return true;
   }
 
+  advance(h) {
+    let guard = 0;
+    while (h > 1e-9 && !this.gameOver && guard++ < 2000) {
+      const c = Math.min(h, 1 - (this.moved || 0), 0.25);
+      this.moveStep(c); this.moved = (this.moved || 0) + c; h -= c;
+      if (this.moved >= 1 - 1e-9) this.tickHour();
+    }
+  }
+
+  moveStep(dt) {
+    if (dt <= 0) return;
+    for (const d of this.divs.values()) {
+      if (!d.path.length || d.attacking != null) continue;
+      let budget = dt;
+      while (budget > 0 && d.path.length) {
+        const step = d.path[0], next = this.P[step.id];
+        if (d.domain === "land") {
+          if (!this.canEnter(d.tag, next) && next.ctrl !== d.tag) { d.path = []; break; }
+          if ([...next.divs].some(i => { const e = this.divs.get(i); return e && this.atWar(d.tag, e.tag); })) break;
+          if (d.path.length === 1 && this.occupiedBy(next.id, d.tag, "land", d.id)) {
+            const alt = this.freeTilesNear(d.tag, next.id, "land", 1, d.id)[0];
+            const np = alt ? this.computePath(d, alt.id) : null;
+            if (np && np.length) { d.path = np; d.prog = 0; } else { d.path = []; d.prog = 0; }
+            break;
+          }
+          d.entrench = 0;
+        }
+        const leg = this.legHours(d, d.prov, step.id, d.domain === "land" ? step.sea : false);
+        const need = leg - d.prog;
+        if (budget < need) { d.prog += budget; break; }
+        budget -= need; d.prog = 0; d.path.shift();
+        this.moveDivTo(d, step.id);
+        if (d.domain === "air") { if (!d.path.length && !this.friendly(d.tag, next.ctrl)) this.rebase(d); }
+        else if (d.domain === "land" && this.atWar(d.tag, next.ctrl)) this.capture(next, d.tag);
+      }
+    }
+  }
+
   tickHour() {
     if (this.gameOver) return;
+    if ((this.moved || 0) < 1) this.moveStep(1 - (this.moved || 0));
+    this.moved = 0;
     this.time += HOUR;
     this.hourCount++;
     this.battles.clear();
@@ -548,17 +590,7 @@ export class Game {
     const attackersBy = new Map();
     for (const d of this.divs.values()) {
       if (!d.path.length) { d.attacking = null; continue; }
-      if (d.domain !== "land") {
-        const step = d.path[0];
-        d.prog += 1;
-        if (d.prog >= this.legHours(d, d.prov, step.id, false)) {
-          d.prog = 0; d.path.shift();
-          const q = this.P[step.id];
-          this.moveDivTo(d, step.id);
-          if (d.domain === "air" && !d.path.length && !this.friendly(d.tag, q.ctrl)) this.rebase(d);
-        }
-        continue;
-      }
+      if (d.domain !== "land") continue;
       const step = d.path[0], next = this.P[step.id];
       if (!this.canEnter(d.tag, next) && next.ctrl !== d.tag) { d.path = []; d.attacking = null; continue; }
       const enemyHere = [...next.divs].some(i => { const e = this.divs.get(i); return e && this.atWar(d.tag, e.tag); });
@@ -570,19 +602,6 @@ export class Game {
         continue;
       }
       d.attacking = null;
-      if (d.path.length === 1 && this.occupiedBy(next.id, d.tag, "land", d.id)) {
-        const alt = this.freeTilesNear(d.tag, next.id, "land", 1, d.id)[0];
-        const np = alt ? this.computePath(d, alt.id) : null;
-        if (np && np.length) { d.path = np; d.prog = 0; } else { d.path = []; d.prog = 0; }
-        continue;
-      }
-      d.prog += 1;
-      d.entrench = 0;
-      if (d.prog >= this.legHours(d, d.prov, next.id, step.sea)) {
-        d.prog = 0; d.path.shift();
-        this.moveDivTo(d, next.id);
-        if (this.atWar(d.tag, next.ctrl)) this.capture(next, d.tag);
-      }
     }
     for (const [pid, atts] of attackersBy) this.resolveBattle(this.P[pid], atts);
     for (const d of this.divs.values()) {
@@ -810,7 +829,7 @@ export class Game {
 
   techCost(c, t) {
     const ahead = Math.max(0, t.year - this.year);
-    return Math.round(t.days * (1 + 0.5 * ahead));
+    return Math.min(MAX_RESEARCH_DAYS, Math.round(t.days * (1 + 0.5 * ahead)));
   }
   techAvailable(c, t) {
     if (c.techs.has(t.id) || c.research.some(r => r && r.id === t.id)) return false;

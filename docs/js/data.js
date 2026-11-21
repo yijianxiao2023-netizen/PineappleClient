@@ -150,6 +150,11 @@ for (const L of TIER_LINES) {
 for (let t = 1; t <= 5; t++) TECHS.push({ id: `housing${t}`, name: `Housing ${ROMAN_T[t - 1]}`, cat: "Housing", year: 1934 + t * 2, days: 90 + t * 30, req: t > 1 ? [`housing${t - 1}`] : [], fx: { manpower: 0.25 }, desc: "+25% manpower growth. Better housing means more recruits every day." });
 
 
+{
+  const maxD = Math.max(...TECHS.map(t => t.days));
+  for (const t of TECHS) t.days = Math.max(8, Math.round(t.days * 42 / maxD));
+}
+
 const G = (id, name, x, y, req, fx, desc, extra = {}) => ({ id, name, x, y, req, fx, desc, ...extra });
 
 export const GENERIC_FOCUS = [
