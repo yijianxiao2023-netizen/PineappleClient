@@ -1,4 +1,4 @@
-import { START_DATE, COUNTRIES, FACTIONS, TERRAIN, UNIT, BUILD, TECHS, GENERIC_FOCUS, NATIONAL_FOCUS, AIR_RANGE, TIER_MULT, TIER_COST, ROMAN } from "./data.js";
+import { START_DATE, COUNTRIES, FACTIONS, TERRAIN, UNIT, BUILD, TECHS, GENERIC_FOCUS, NATIONAL_FOCUS, AIR_RANGE, TIER_MULT, TIER_COST, ROMAN, INCOME_SCALE, COST_SCALE, WAR_TAX } from "./data.js?v=1795219986";
 
 const DAY = 86400000;
 const HOUR = 3600000;
@@ -40,7 +40,7 @@ export class Game {
     this.countries = {};
     for (const [tag, d] of Object.entries(COUNTRIES)) {
       this.countries[tag] = {
-        tag, ...d, alive: true, pp: 50, manpower: d.pop * 8, eqInf: d.mil * 600 + d.divs * 200, tanks: 0, planes: d.mil * 20, money: 400 + d.civ * 25, income: 0, share: { tank: 0, air: 0.1 },
+        tag, ...d, alive: true, pp: 50, manpower: d.pop * 8, eqInf: d.mil * 600 + d.divs * 200, tanks: 0, planes: d.mil * 20, money: (400 + d.civ * 25) * COST_SCALE, income: 0, share: { tank: 0, air: 0.1 },
         techs: new Set(), research: Array.from({ length: d.slots }, () => null), focus: null, focusDone: new Set(),
         focusBonus: { ...(d.spirit || {}) }, mods: {}, construction: [], training: [], wargoals: {}, justifying: null, guarantees: new Set(),
         capital: -1, civEff: 0, milEff: 0, supplied: new Set(), kills: 0, losses: 0, flags: {},
@@ -79,6 +79,7 @@ export class Game {
     this.rebuildRelations();
     this.updateEconomyCache();
     this.computeSupply();
+    for (const c of Object.values(this.countries)) c.mpGain = c.mpBase * 0.014 * (1 + (c.mods.manpower || 0));
   }
 
   on(fn) { this.listeners.push(fn); }
@@ -216,7 +217,7 @@ export class Game {
         const land = owned ? 1 : 0.8;
         c.civEff += p.civ * f + 0.08 * land; c.milEff += p.mil * f + 0.06 * land;
         c.mpBase += (p.pop || 0) * (owned && p.home ? 1 : 0.15);
-        c.income += (1 + 0.4 * p.vp) * land;
+        c.income += (1 + 0.4 * p.vp) * land * INCOME_SCALE;
         c.provCount++;
       }
       const o = this.countries[p.core];
@@ -312,6 +313,20 @@ export class Game {
     const path = []; let cur = to;
     while (cur !== from) { path.unshift({ id: cur, sea: false }); cur = prev.get(cur); }
     return path;
+  }
+
+  computePath(d, target) {
+    if (d.prov === target) return [];
+    if (d.domain === "air") {
+      if (!this.friendly(d.tag, this.P[target].ctrl)) return null;
+      const prev = new Map([[d.prov, -1]]), q = [d.prov];
+      while (q.length && !prev.has(target)) { const id = q.shift(); for (const n of [...this.P[id].adj, ...this.P[id].sea]) if (!prev.has(n)) { prev.set(n, id); q.push(n); } }
+      if (!prev.has(target)) return null;
+      const path = []; for (let cur = target; cur !== d.prov; cur = prev.get(cur)) path.unshift({ id: cur, sea: false });
+      return path;
+    }
+    if (d.domain === "sea") return this.findSeaPath(d.tag, d.prov, target);
+    return this.findPath(d.tag, d.type, d.prov, target);
   }
 
   orderMove(divIds, target) {
@@ -555,7 +570,8 @@ export class Game {
     let upkeep = 0;
     for (const d of this.divs.values()) if (d.tag === c.tag) upkeep += UNIT[d.type].upkeep * TIER_COST[(d.tier || 1) - 1];
     c.upkeep = upkeep;
-    c.money += c.income + c.civEff * 1.5 - upkeep;
+    c.money += c.income + c.civEff * 1.5 * INCOME_SCALE - upkeep;
+    c.netIncome = c.income + c.civEff * 1.5 * INCOME_SCALE - upkeep;
     c.broke = c.money < 0;
     if (c.broke) { c.money = 0; for (const d of this.divs.values()) if (d.tag === c.tag && d.domain === "land") d.org = Math.max(0, d.org - 0.04); }
     c.pp = Math.min(2000, c.pp + 2 + (c.mods.ppGain || 0));
@@ -807,6 +823,8 @@ export class Game {
 
   forceWar(tag, target) {
     if (this.atWar(tag, target) || this.friendly(tag, target) || !this.countries[target].alive) return false;
+    const c = this.countries[tag];
+    if (!c.wargoals[target]) { c.money -= WAR_TAX; this.log(`${c.name} attacked ${this.countries[target].name} without a war goal and paid a $${WAR_TAX.toLocaleString()} war tax.`, "justify", [tag, target]); }
     this.countries[tag].wargoals[target] = this.time + DAY;
     return this.declareWar(tag, target);
   }
@@ -829,6 +847,7 @@ export class Game {
     const old = this.factionOf(tag);
     const victimF = this.factionOf(target);
     const oldName = old ? old.name : "your allies";
+    c.money -= WAR_TAX;
     if (old) {
       old.members.delete(tag);
       if (old.leader === tag) old.leader = [...old.members].sort((a, b) => this.strength(b) - this.strength(a))[0] || null;

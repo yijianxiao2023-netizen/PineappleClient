@@ -67,16 +67,22 @@ export const UNIT = {
   ship: { name: "Battle Fleet", short: "FLT", domain: "sea", att: 0, def: 0, hours: 12, eq: 1500, tanks: 0, planes: 0, mp: 3, money: 1500, days: 180, upkeep: 2.5, color: "#4a7fd0", desc: "Naval strength for sea invasions. Bombards nearby coastal battles." },
 };
 export const AIR_RANGE = 170;
+export const INCOME_SCALE = 2400;
+export const COST_SCALE = 1000;
+export const WAR_TAX = 10000;
 export const TIER_MULT = [1, 1.2, 1.42, 1.68, 2.0];
 export const TIER_COST = [1, 1.2, 1.45, 1.75, 2.1];
 export const ROMAN = ["I", "II", "III", "IV", "V"];
 export const UNIT_ORDER = ["inf", "at", "tank", "arm", "ftr", "bmb", "ship"];
 
-export const BUILD = {
+export const BUILD_BASE = {
   civ: { name: "Civilian Factory", cost: 10800, money: 600 },
   mil: { name: "Military Factory", cost: 7200, money: 600 },
   fort: { name: "Land Fort", cost: 3000, money: 200 },
 };
+for (const u of Object.values(UNIT)) { u.money *= COST_SCALE; u.upkeep *= COST_SCALE; }
+export const BUILD = BUILD_BASE;
+for (const b of Object.values(BUILD)) b.money *= COST_SCALE;
 
 export const TECHS = [
   { id: "tools1", name: "Basic Machine Tools", cat: "Industry", year: 1936, days: 120, req: [], fx: { output: 0.1 }, desc: "+10% factory output" },

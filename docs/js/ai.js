@@ -1,4 +1,4 @@
-import { TECHS, UNIT } from "./data.js";
+import { TECHS, UNIT } from "./data.js?v=1795219986";
 
 const TECH_ORDER = ["tools1", "constr1", "housing1", "infwep1", "inf_t2", "arty1", "DOCTRINE", "tank1", "bomber1", "radio", "ftr_t2", "housing2", "suppwep", "at1", "tools2", "constr2", "inf_t3", "tank_t2", "ftr2", "motor", "infwep2", "tank2", "at_t2", "bmb_t2", "housing3", "concind", "logistics", "arm_t2", "inf_t4", "cas", "ftr_t3", "tank_t3", "ship_t2", "arty2", "doc2", "at_t3", "radar", "housing4", "constr3", "arm_t3", "inf_t5", "ftr3", "bmb_t3", "tools3", "tank3", "tank_t4", "ftr_t4", "housing5", "arm_t4", "infwep3", "ship_t3"];
 const DOCTRINE = { GER: "doc_mobile", SOV: "doc_mass", FRA: "doc_plan", ENG: "doc_fire", ITA: "doc_fire" };
@@ -77,8 +77,8 @@ function economy(g, c) {
     const ftrWant = Math.ceil(landN / (c.major ? 7 : 12));
     if (count("ftr") < ftrWant) wants.unshift(["ftr", 1]);
     if (c.major && count("bmb") < Math.ceil(ftrWant / 2)) wants.splice(1, 0, ["bmb", 1]);
-    if (count("ship") < fleets && c.money > 2500) wants.push(["ship", 1]);
-    const pick = wants.find(([t]) => g.canTrain(c.tag, t) && c.money - g.unitCost(c.tag, t).money > (c.upkeep || 0) * 25 && (c.income + c.civEff * 1.5) - (c.upkeep || 0) > g.unitCost(c.tag, t).upkeep);
+    if (count("ship") < fleets && c.money > 2500 * 1000) wants.push(["ship", 1]);
+    const pick = wants.find(([t]) => g.canTrain(c.tag, t) && c.money - g.unitCost(c.tag, t).money > (c.upkeep || 0) * 25 && (c.income + c.civEff * 1.5 * 2400) - (c.upkeep || 0) > g.unitCost(c.tag, t).upkeep);
     if (!pick) break;
     g.train(c.tag, pick[0]); made++;
   }
