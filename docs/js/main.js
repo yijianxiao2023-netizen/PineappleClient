@@ -1,7 +1,7 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795220562";
-import { Game, dateStr } from "./sim.js?v=1795220562";
-import { runAI, aiAcceptsFaction } from "./ai.js?v=1795220562";
-import { MapView, drawUnitIcon } from "./render.js?v=1795220562";
+import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795220978";
+import { Game, dateStr } from "./sim.js?v=1795220978";
+import { runAI, aiAcceptsFaction } from "./ai.js?v=1795220978";
+import { MapView, drawUnitIcon } from "./render.js?v=1795220978";
 
 const $ = id => document.getElementById(id);
 const SPEEDS = [0, 2, 4, 8, 20, 60];
@@ -32,7 +32,7 @@ let battleLog = [], unread = 0, logFilter = "all", endShown = false, acc = 0, la
 const canvas = $("map");
 
 async function boot() {
-  const res = await fetch("data/map.json?v=1795220562");
+  const res = await fetch("data/map.json?v=1795220978");
   MAP = await res.json();
   const preview = new Game(MAP, { seed: 1 });
   view = new MapView(canvas, preview);
@@ -347,7 +347,8 @@ function renderHelp() {
     <li><kbd>Space</kbd> pause or unpause, <kbd>1</kbd>–<kbd>5</kbd> game speed.</li>
     <li>Drag to pan, scroll to zoom. The arrow keys also pan.</li>
     <li><b>Click a unit</b> to select it, then <b>click a province</b> to send it there. Right-click works too. <kbd>Shift</kbd>-click adds more units, <kbd>Shift</kbd>-drag box-selects, and clicking the sea deselects.</li>
-    <li>With a unit selected, hover anywhere to <b>preview the route</b> as dashed arrows, then click to go.</li>
+    <li>You never have to click each province. Select a unit, <b>hover</b> over any destination to preview the fastest route (dashed arrows), then <b>left-click once</b> and it walks the whole way. Nothing moves until you click.</li>
+    <li>Land units only walk over land. They cross the sea only when there is no land route at all (for example, Britain to France).</li>
     <li>Attacking a country you have no war goal against costs a <b>$10,000 war tax</b>. Betraying allies costs the same.</li>
     <li>The route shows one arrow per province. Each arrow fills up as the unit crosses that province, so no province can be skipped. Red arrows mean the unit is attacking.</li>
     <li><kbd>F</kbd> Focus · <kbd>R</kbd> Research · <kbd>P</kbd> Industry · <kbd>A</kbd> Army · <kbd>D</kbd> Diplomacy · <kbd>M</kbd> map mode · <kbd>Esc</kbd> deselect.</li></ul>
@@ -365,7 +366,7 @@ function renderHelp() {
     <li>Every province you take <b>becomes yours</b> and turns your color. It gives you its factories, income and industry.</li>
     <li>Hover over any counter to see each unit's health bar (soldiers left). Click a battle's province to see both sides.</li>
     <li><b>Diplomacy…</b> (Diplomacy panel, or click a foreign province): propose alliances, demand gold, territory or puppets, and send peace treaties that demand gold or land. The AI does the same to each other and to you, and a popup lets you accept or refuse.</li>
-    <li>You can <b>betray your allies</b> by attacking one of their units. You leave your faction and join the other side for the rest of the match. Your allies will never betray you first, but anyone else can attack you.</li></ul>
+    <li>You can <b>betray your allies</b> by moving a unit into their territory or onto their units. No war goal or justification is needed. You leave your faction and join the other side for the rest of the match. Your allies will never betray you first, but anyone else can attack you.</li></ul>
   <h4>Warfare</h4><ul>
     <li>Moving into a province with enemy divisions starts a battle. The bar under the swords shows which side is winning.</li>
     <li>Defenders get bonuses from terrain, forts and digging in. Attack with about 2 to 1 odds or bring armor.</li>
@@ -631,10 +632,10 @@ function orderWithDiplomacy(p, clickedTag) {
     });
     return;
   }
-  if (rel === "ally" && clickedTag) {
+  if (rel === "ally" && T.overlord !== player) {
     const myF = game.factionOf(player);
     const rival = game.rivalFaction(myF || game.factionOf(target));
-    confirmBox(`Betray ${myF ? "the " + myF.name : T.name}?`, `Attacking <b>${T.name}</b> means betraying your allies. You will <b>leave the ${esc(myF ? myF.name : "alliance")}</b> and join <b>${rival ? "the " + esc(rival.name) : "a new faction of your own"}</b> for the rest of this match. Every former ally will be at war with you.`, "Betray them", "red", () => {
+    confirmBox(`Betray ${myF ? "the " + myF.name : T.name}?`, `Moving into <b>${T.name}</b>'s territory is an attack on your ally. No war goal or justification is needed, but it costs the $10,000 war tax. You will <b>leave the ${esc(myF ? myF.name : "alliance")}</b> and join <b>${rival ? "the " + esc(rival.name) : "a new faction of your own"}</b> for the rest of this match. Every former ally will be at war with you.`, "Betray them", "red", () => {
       game.betray(player, target); finishOrder(p); panelDay = -1; updateHud();
     });
     return;
