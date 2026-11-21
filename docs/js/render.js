@@ -1,4 +1,4 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, AIR_RANGE, ROMAN } from "./data.js?v=1795233706";
+import { COUNTRIES, UNIT, UNIT_ORDER, AIR_RANGE, ROMAN } from "./data.js?v=1795234395";
 
 const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 const rgb = (c, k = 1, a = 1) => `rgba(${Math.round(c[0] * k)},${Math.round(c[1] * k)},${Math.round(c[2] * k)},${a})`;
@@ -17,8 +17,8 @@ export class MapView {
     this.box = null;
     this.buildMode = null;
     this.dirty = true;
-    this.paths = game.P.map(p => { const path = new Path2D(); for (const poly of p.shape) for (const ring of poly) { ring.forEach(([x, y], i) => i ? path.lineTo(x, y) : path.moveTo(x, y)); path.closePath(); } return path; });
-    this.bbox = game.P.map(p => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const poly of p.shape) for (const [x, y] of poly[0]) { if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y; } return [x0, y0, x1, y1]; });
+    this.paths = game.T.map(p => { const path = new Path2D(); for (const poly of p.shape) for (const ring of poly) { ring.forEach(([x, y], i) => i ? path.lineTo(x, y) : path.moveTo(x, y)); path.closePath(); } return path; });
+    this.bbox = game.T.map(p => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const poly of p.shape) for (const [x, y] of poly[0]) { if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y; } return [x0, y0, x1, y1]; });
     this.coastPath = new Path2D();
     for (const poly of game.map.coast) for (const ring of poly) { ring.forEach(([x, y], i) => i ? this.coastPath.lineTo(x, y) : this.coastPath.moveTo(x, y)); this.coastPath.closePath(); }
     this.buildEdges();
@@ -48,7 +48,7 @@ export class MapView {
     this.borderPath = new Path2D();
     this.frontPath = new Path2D();
     for (const e of this.edges) {
-      const [a, b] = e.ps.map(i => g.P[i]);
+      const [a, b] = e.ps.map(i => g.T[i]);
       if (a.owner !== b.owner) { this.borderPath.moveTo(e.a[0], e.a[1]); this.borderPath.lineTo(e.b[0], e.b[1]); }
       if (a.ctrl !== b.ctrl && g.atWar(a.ctrl, b.ctrl)) { this.frontPath.moveTo(e.a[0], e.a[1]); this.frontPath.lineTo(e.b[0], e.b[1]); }
     }
@@ -60,7 +60,7 @@ export class MapView {
       for (const p of provs) {
         if (seen.has(p.id)) continue;
         const comp = []; const q = [p.id]; seen.add(p.id);
-        while (q.length) { const id = q.pop(); comp.push(g.P[id]); for (const n of g.P[id].adj) if (!seen.has(n) && g.P[n].owner === tag) { seen.add(n); q.push(n); } }
+        while (q.length) { const id = q.pop(); comp.push(g.T[id]); for (const n of g.T[id].adj) if (!seen.has(n) && g.T[n].owner === tag) { seen.add(n); q.push(n); } }
         const area = comp.reduce((s, x) => s + x.area, 0);
         if (!best || area > best.area) best = { comp, area };
       }
@@ -108,7 +108,7 @@ export class MapView {
     for (let i = 0; i < this.paths.length && !hit; i++) {
       const b = this.bbox[i];
       if (x < b[0] || x > b[2] || y < b[1] || y > b[3]) continue;
-      if (ctx.isPointInPath(this.paths[i], x, y)) hit = this.g.P[i];
+      if (ctx.isPointInPath(this.paths[i], x, y)) hit = this.g.T[i];
     }
     ctx.restore();
     return hit;
@@ -159,6 +159,11 @@ export class MapView {
       for (const p of g.P) if (g.canBuild(player, this.buildMode, p.id)) { ctx.fillStyle = "rgba(255,220,90,0.35)"; ctx.fill(this.paths[p.id]); }
     }
     if (s > 0.9) { ctx.strokeStyle = "rgba(0,0,0,0.16)"; ctx.lineWidth = 0.7 / s; for (const p of g.P) ctx.stroke(this.paths[p.id]); }
+    if (g.S.length) {
+      ctx.strokeStyle = s > 1.3 ? "rgba(150,195,230,0.16)" : "rgba(150,195,230,0.09)"; ctx.lineWidth = 0.8 / s;
+      for (const t of g.S) ctx.stroke(this.paths[t.id]);
+      if (this.seaHighlight) { ctx.lineWidth = 1.6 / s; for (const [id, col] of this.seaHighlight) { ctx.fillStyle = col; ctx.fill(this.paths[id]); ctx.strokeStyle = col.replace(/[\d.]+\)$/, "0.9)"); ctx.stroke(this.paths[id]); } }
+    }
     ctx.strokeStyle = "rgba(20,24,28,0.85)"; ctx.lineWidth = 1.7 / s; ctx.stroke(this.borderPath);
     ctx.strokeStyle = "rgba(10,25,40,0.7)"; ctx.lineWidth = 1 / s; ctx.stroke(this.coastPath);
     ctx.save(); ctx.strokeStyle = "rgba(230,40,30,0.9)"; ctx.lineWidth = 2.2 / s; ctx.setLineDash([5 / s, 3 / s]); ctx.stroke(this.frontPath); ctx.restore();
@@ -237,7 +242,7 @@ export class MapView {
       ctx.fillStyle = "#ff9a8a"; ctx.fillText("No route there", mx + 14, my + 10);
       ctx.restore(); return;
     }
-    const pts = [g.P[pv.from].c, ...pv.path.map(id => g.P[id].c)].map(c => this.toScreen(c[0], c[1]));
+    const pts = [g.T[pv.from].c, ...pv.path.map(id => g.T[id].c)].map(c => this.toScreen(c[0], c[1]));
     const t = (performance.now() / 600) % 1;
     for (let i = 0; i < pts.length - 1; i++) {
       const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
@@ -279,10 +284,10 @@ export class MapView {
       const sel = this.selected.has(d.id);
       const ai = d.tag !== g.player;
       const k = ai ? 0.62 : 1;
-      if (ai) { const [qx, qy] = this.toScreen(g.P[d.prov].c[0], g.P[d.prov].c[1]); if (qx < -300 || qy < -300 || qx > W + 300 || qy > H + 300) continue; }
+      if (ai) { const [qx, qy] = this.toScreen(g.T[d.prov].c[0], g.T[d.prov].c[1]); if (qx < -300 || qy < -300 || qx > W + 300 || qy > H + 300) continue; }
       const cc = hex(COUNTRIES[d.tag].color);
       const hostileToMe = ai && g.player && g.atWar(d.tag, g.player);
-      const pts = [g.P[d.prov].c, ...d.path.map(s => g.P[s.id].c)].map(c => this.toScreen(c[0], c[1]));
+      const pts = [g.T[d.prov].c, ...d.path.map(s => g.T[s.id].c)].map(c => this.toScreen(c[0], c[1]));
       const leg = g.legHours(d, d.prov, d.path[0].id, d.path[0].sea);
       const done0 = d.attacking != null ? 0 : Math.max(0, Math.min(1, (d.prog + frac) / leg));
       const fillCol = d.attacking != null ? "#ff5a48" : sel ? "#ffe27a" : ai ? rgb(cc, 1, 0.95) : "#8be07a";
@@ -326,9 +331,9 @@ export class MapView {
   }
 
   unitPos(d, frac) {
-    const g = this.g, a = g.P[d.prov];
+    const g = this.g, a = g.T[d.prov];
     if (!d.path.length || d.attacking != null) return { x: a.c[0], y: a.c[1], moving: false };
-    const b = g.P[d.path[0].id];
+    const b = g.T[d.path[0].id];
     const leg = g.legHours(d, d.prov, b.id, d.path[0].sea);
     const t = Math.max(0, Math.min(1, (d.prog + frac) / leg));
     if (t <= 0.001) return { x: a.c[0], y: a.c[1], moving: false };
@@ -358,7 +363,7 @@ export class MapView {
     }
     const rank = t => (t === g.player ? 0 : g.atWar(g.player, t) ? 2 : 1);
     for (const [pid, list] of byProv) {
-      const p = g.P[pid];
+      const p = g.T[pid];
       const [cx, cy] = this.toScreen(p.c[0], p.c[1]);
       if (cx < -80 || cy < -60 || cx > this.vw + 80 || cy > this.vh + 60) continue;
       list.sort((a, b) => rank(a.tag) - rank(b.tag) || a.tag.localeCompare(b.tag) || UNIT_ORDER.indexOf(a.type) - UNIT_ORDER.indexOf(b.type));
@@ -379,7 +384,7 @@ export class MapView {
     for (const id of this.selected) {
       const d = g.divs.get(id);
       if (!d || d.domain !== "air") continue;
-      const p = g.P[d.prov];
+      const p = g.T[d.prov];
       const [x, y] = this.toScreen(p.c[0], p.c[1]);
       ctx.beginPath(); ctx.arc(x, y, AIR_RANGE * s, 0, Math.PI * 2);
       ctx.strokeStyle = "rgba(108,200,242,0.6)"; ctx.setLineDash([6, 5]); ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
@@ -403,6 +408,8 @@ export class MapView {
     ctx.fillStyle = "#fff"; ctx.textBaseline = "middle"; ctx.textAlign = "left";
     ctx.font = "700 12px Inter, system-ui, sans-serif";
     ctx.fillText(String(gp.ds.length), x + 23, y + h / 2);
+    const cargo = gp.ds.reduce((a, d) => a + (d.cargo?.length || 0), 0);
+    if (cargo) { ctx.fillStyle = "#ffe27a"; ctx.beginPath(); ctx.arc(x + w - 2, y + h - 2, 7, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = "#111"; ctx.lineWidth = 1; ctx.stroke(); ctx.fillStyle = "#111"; ctx.font = "800 9px Inter, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.fillText(String(cargo), x + w - 2, y + h - 1.5); ctx.textAlign = "left"; }
     const tier = Math.max(...gp.ds.map(d => d.tier || 1));
     if (w >= 50) { ctx.font = "600 9px Inter, system-ui, sans-serif"; ctx.fillStyle = "rgba(255,255,255,0.85)"; ctx.textAlign = "right"; ctx.fillText(u.short, x + w - 3, y + h / 2); }
     const tl = "T" + ROMAN[tier - 1];
@@ -428,7 +435,7 @@ export class MapView {
   drawBattles() {
     const ctx = this.ctx, g = this.g;
     for (const b of g.battles.values()) {
-      const p = g.P[b.prov];
+      const p = g.T[b.prov];
       const [x, y] = this.toScreen(p.c[0], p.c[1]);
       if (x < -30 || y < -30 || x > this.vw + 30 || y > this.vh + 30) continue;
       const share = b.A / (b.A + b.D);

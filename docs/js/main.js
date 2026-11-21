@@ -1,7 +1,7 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795233706";
-import { Game, dateStr } from "./sim.js?v=1795233706";
-import { runAI, aiAcceptsFaction } from "./ai.js?v=1795233706";
-import { MapView, drawUnitIcon } from "./render.js?v=1795233706";
+import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795234395";
+import { Game, dateStr, BOARD_RADIUS, FLEET_CAPACITY } from "./sim.js?v=1795234395";
+import { runAI, aiAcceptsFaction } from "./ai.js?v=1795234395";
+import { MapView, drawUnitIcon } from "./render.js?v=1795234395";
 
 const $ = id => document.getElementById(id);
 const SPEEDS = [0, 0.04, 0.08, 0.16, 0.4, 0.8, 1.6, 4];
@@ -33,7 +33,7 @@ let battleLog = [], unread = 0, logFilter = "all", endShown = false, acc = 0, la
 const canvas = $("map");
 
 async function boot() {
-  const res = await fetch("data/map.json?v=1795233706");
+  const res = await fetch("data/map.json?v=1795234395");
   MAP = await res.json();
   const preview = new Game(MAP, { seed: 1 });
   view = new MapView(canvas, preview);
@@ -59,7 +59,7 @@ function buildStart() {
     document.querySelectorAll(".nation-card").forEach(x => x.classList.toggle("sel", x === b));
     picked = b.dataset.tag;
     const c = COUNTRIES[picked];
-    const cap = view.g.P[view.g.c(picked).capital];
+    const cap = view.g.T[view.g.c(picked).capital];
     $("pickInfo").innerHTML = `<b style="color:var(--gold-2)">${c.name}</b> · ${facName(picked)} · ${IDEOLOGY[c.ideology].name}<br>${c.civ} civilian / ${c.mil} military factories, ${c.divs} divisions. Capital: ${cap ? cap.name : "?"}.`;
     $("startBtn").disabled = false;
     if (cap) view.focusOn(cap.c[0], cap.c[1], Math.max(view.scale, 0.9));
@@ -72,7 +72,7 @@ function startGame(tag) {
   game = new Game(MAP, { player: tag }); window.__game = game;
   game.ai = runAI;
   view = new MapView(canvas, game); window.__game = game; window.__view = view;
-  const cap = game.P[game.c(tag).capital];
+  const cap = game.T[game.c(tag).capital];
   view.focusOn(cap.c[0], cap.c[1], 1.5);
   $("start").classList.add("hidden");
   $("hud").classList.remove("hidden");
@@ -274,7 +274,7 @@ function renderProduction() {
   const armor = c.techs.has("tank1");
   const tankS = armor ? c.share.tank : 0, airS = c.share.air, infS = 1 - tankS - airS;
   const queue = c.construction.map((it, i) => {
-    const p = game.P[it.prov], cost = BUILD[it.type].cost;
+    const p = game.T[it.prov], cost = BUILD[it.type].cost;
     const perDay = Math.min(75 * (1 + (c.mods.construction || 0)), cpts);
     return `<div class="row"><div class="grow"><div class="t">${BUILD[it.type].name}</div><div class="s">${esc(p.name)} · ${i < Math.max(1, Math.floor(cpts / 75)) + 0 ? "~" + Math.ceil((cost - it.progress) / Math.max(1, perDay)) + " days" : "waiting"}</div><div class="bar green"><i style="width:${it.progress / cost * 100}%"></i></div></div><button class="btn sm" data-act="unbuild" data-i="${i}">✕</button></div>`;
   }).join("") || `<div class="muted">Nothing being built. Your civilian factories are idle.</div>`;
@@ -387,6 +387,11 @@ function renderHelp() {
     <li>Every counter shows the unit type icon, how many units are in it, and green (strength) and yellow (organization) bars. A white border means yours, blue means an ally, red means an enemy.</li>
     <li>Time: one game day takes 10 minutes at speed 1, 5 minutes at speed 2, 2.5 minutes at speed 3, 1 minute at speed 4, 30 seconds at speed 5, 15 seconds at speed 10 and 6 seconds at speed 25. Research never takes more than 42 game days (7 hours at speed 1).</li>
     <li>Movement takes time. Infantry needs about 25 seconds per province at speed 1 (about 6 s at speed 3, about 1 s at speed 5). Tanks are about twice as fast, aircraft and fleets faster still. Rough terrain is slower.</li></ul>
+  <h4>Fleets and naval landings</h4><ul>
+    <li>The sea is split into water tiles. Fleets sail only on water; click any water tile (or a coast) to send a fleet there.</li>
+    <li>Land units can't walk on water. To cross the sea, select a fleet and press <b>Board nearby units</b> (or select a fleet together with land units and press <b>Board selected units</b>). Units must be within ${BOARD_RADIUS} tiles of the fleet (highlighted in gold). A fleet carries up to ${FLEET_CAPACITY} units.</li>
+    <li>Sail somewhere else, press <b>Unload…</b>, then LEFT-CLICK a land tile within ${BOARD_RADIUS} tiles of the fleet (highlighted in green). Units land on free tiles there; landing on enemy land captures it, and landing on a neutral country's coast starts a war.</li>
+    <li>If a fleet carrying units is sunk, the units aboard are lost. The AI uses fleets for invasions too.</li></ul>
   <h4>One unit per tile</h4><ul>
     <li>Each tile can hold <b>one</b> land unit (plus one air wing and one fleet). Units can't stack.</li>
     <li>New units appear on a free tile of your land, nearest your capital. You can only train when you have a free tile, so <b>more land means a bigger army</b>.</li>
@@ -463,11 +468,24 @@ function onPanelClick(e) {
   else if (a === "logf") { logFilter = el.dataset.f; renderDock(); return; }
   else if (a === "dip") { dipModal(el.dataset.t); return; }
   else if (a === "upgrade") { const n = game.upgradeUnits(player, el.dataset.type); if (!n) toast("Can't afford the upgrade right now."); }
+  else if (a === "board") {
+    const ship = game.divs.get(+el.dataset.ship);
+    if (!ship) return;
+    const ids = el.dataset.mode === "sel" ? [...view.selected].filter(i => game.divs.get(i)?.domain === "land") : game.loadableFor(ship).map(d => d.id);
+    const n = game.embark(ship.id, ids);
+    toast(n ? `${n} unit${n > 1 ? "s" : ""} boarded the fleet (${ship.cargo.length}/${FLEET_CAPACITY}).` : `No units could board. They must be within ${BOARD_RADIUS} tiles of the fleet and not fighting, and the fleet holds ${FLEET_CAPACITY}.`);
+    view.selected = new Set([ship.id]); showDivInfo(); view.dirty = true; return;
+  }
+  else if (a === "unload") {
+    unloadMode = +el.dataset.ship; updateMoveHint();
+    toast(`LEFT-CLICK a land tile within ${BOARD_RADIUS} tiles of the fleet (highlighted) to unload. Right-click or Esc cancels.`);
+    view.dirty = true; return;
+  }
   else if (a === "stop") { for (const id of view.selected) { const d = game.divs.get(id); if (d) { d.path = []; d.attacking = null; } } }
   else if (a === "desel") { view.selected.clear(); $("info").classList.add("hidden"); }
-  else if (a === "selprov") { const p = game.P[+el.dataset.p]; view.selected = new Set([...p.divs, ...p.air, ...p.ships].filter(i => game.divs.get(i)?.tag === player)); showDivInfo(); }
-  else if (a === "pbuild") { if (game.queueBuild(player, el.dataset.type, +el.dataset.p)) toast(`${BUILD[el.dataset.type].name} queued.`); showProvInfo(game.P[+el.dataset.p]); }
-  else if (a === "movehere") { moveSelected(game.P[+el.dataset.p]); }
+  else if (a === "selprov") { const p = game.T[+el.dataset.p]; view.selected = new Set([...p.divs, ...p.air, ...p.ships].filter(i => game.divs.get(i)?.tag === player)); showDivInfo(); }
+  else if (a === "pbuild") { if (game.queueBuild(player, el.dataset.type, +el.dataset.p)) toast(`${BUILD[el.dataset.type].name} queued.`); showProvInfo(game.T[+el.dataset.p]); }
+  else if (a === "movehere") { moveSelected(game.T[+el.dataset.p]); }
   renderPanel(); updateHud(); view.dirty = true;
 }
 
@@ -482,6 +500,11 @@ function setBuildMode(type) {
 function showProvInfo(p) {
   const el = $("info");
   el.classList.remove("hidden");
+  if (p.isSea) {
+    const fl = [...p.ships].map(i => game.divs.get(i)).filter(Boolean);
+    el.innerHTML = `<h3>🌊 ${esc(p.name)}</h3><div class="kv"><span class="k">Type</span><span>Open water</span><span class="k">Coast</span><span>${p.shore.length ? p.shore.slice(0, 5).map(i => esc(game.T[i].name)).join(", ") : "None nearby"}</span><span class="k">Fleets</span><span>${fl.length ? fl.map(d => `${flag(d.tag)} ${esc(game.c(d.tag).name)}${d.cargo?.length ? ` (carrying ${d.cargo.length})` : ""}`).join("<br>") : "None"}</span></div><div class="muted" style="margin-top:6px">Only fleets can sail here. Land units cross water by boarding a fleet.</div>`;
+    return;
+  }
   const own = p.owner === player;
   const here = new Map();
   const byType = [];
@@ -634,7 +657,8 @@ function updateMoveHint() {
   if (!h) return;
   const n = game ? [...view.selected].filter(i => game.divs.get(i)).length : 0;
   h.classList.toggle("hidden", !n);
-  if (n) h.innerHTML = `<b>${n} unit${n > 1 ? "s" : ""} selected.</b> Hover over where you want to go, then <b>LEFT-CLICK</b> to move. <span class="muted">Right-click or Esc cancels.</span>`;
+  if (n && unloadMode != null) h.innerHTML = `<b>Unloading:</b> LEFT-CLICK a green land tile to land your units there. <span class="muted">Right-click or Esc cancels.</span>`;
+  else if (n) h.innerHTML = `<b>${n} unit${n > 1 ? "s" : ""} selected.</b> Hover over where you want to go, then <b>LEFT-CLICK</b> to move. <span class="muted">Right-click or Esc cancels.</span>`;
 }
 
 function showDivInfo() {
@@ -649,19 +673,41 @@ function showDivInfo() {
   const land = ds.filter(d => d.domain === "land");
   const avg = (arr, k) => arr.length ? Math.round(arr.reduce((s, d) => s + d[k], 0) / arr.length * 100) : 0;
   const summary = UNIT_ORDER.map(t => { const n = ds.filter(d => d.type === t).length; return n ? `<span style="display:inline-flex;align-items:center;gap:4px;margin:0 10px 4px 0">${icon(t, 20)}<b>${n}</b> ${UNIT[t].name}</span>` : ""; }).join("");
-  const rows = ds.slice(0, 14).map(d => `<div class="divrow">${icon(d.type, 18)}<div><div class="hp"><i style="width:${d.str * 100}%;background:${hpColor(d.str)}"></i><span>${ROMAN[(d.tier || 1) - 1]} · ${men(d)}</span></div>${d.domain === "land" ? `<div class="bar"><i style="width:${d.org * 100}%"></i></div>` : ""}</div><span class="muted">${esc(game.P[d.prov].name)}${d.attacking != null ? " ⚔" : d.path.length ? " → " + esc(game.P[d.path[d.path.length - 1].id].name) : ""}${d.domain === "land" && !sup.has(d.prov) ? " ⚠" : ""}</span></div>`).join("");
+  const rows = ds.slice(0, 14).map(d => `<div class="divrow">${icon(d.type, 18)}<div><div class="hp"><i style="width:${d.str * 100}%;background:${hpColor(d.str)}"></i><span>${ROMAN[(d.tier || 1) - 1]} · ${men(d)}</span></div>${d.domain === "land" ? `<div class="bar"><i style="width:${d.org * 100}%"></i></div>` : ""}</div><span class="muted">${esc(game.T[d.prov].name)}${d.attacking != null ? " ⚔" : d.path.length ? " → " + esc(game.T[d.path[d.path.length - 1].id].name) : ""}${d.domain === "land" && !sup.has(d.prov) ? " ⚠" : ""}</span></div>`).join("");
   el.innerHTML = `<h3>${flag(player)} ${ds.length} unit${ds.length > 1 ? "s" : ""} selected</h3><div style="display:flex;flex-wrap:wrap;margin-bottom:6px">${summary}</div>
   ${land.length ? `<div class="kv"><span class="k">Soldiers</span><span>${Math.round(land.reduce((s, d) => s + d.str * crew(d), 0)).toLocaleString()} / ${land.reduce((s, d) => s + crew(d), 0).toLocaleString()} (${avg(land, "str")}%)</span><span class="k">Organization</span><span>${avg(land, "org")}%</span>
   <span class="k">Supply</span><span>${land.every(d => sup.has(d.prov)) ? "Supplied" : '<b style="color:#ff8a7a">Some out of supply</b>'}</span></div>` : ""}
   <div style="margin-top:8px">${rows}${ds.length > 14 ? `<div class="muted">…and ${ds.length - 14} more</div>` : ""}</div>
-  <div class="muted" style="margin-top:8px">Click a province to move${land.length ? " or attack" : ""}.${ds.some(d => d.domain === "air") ? " Aircraft can only fly to friendly provinces." : ""}${ds.some(d => d.domain === "sea") ? " Fleets can only dock in friendly coastal provinces." : ""}</div>
+  <div class="muted" style="margin-top:8px">Click a province to move${land.length ? " or attack" : ""}.${ds.some(d => d.domain === "air") ? " Aircraft can only fly to friendly provinces." : ""}${ds.some(d => d.domain === "sea") ? " Fleets sail on the water tiles: click any sea tile or a coast." : ""}</div>
+  ${fleetSection(ds)}
   <div class="acts"><button class="btn sm" data-act="stop">Stop</button><button class="btn sm" data-act="desel">Deselect</button></div>`;
+  fleetHighlight();
   infoDay = Math.floor(game.hourCount / 24);
   view.dirty = true;
 }
 
+function fleetSection(ds) {
+  const ships = ds.filter(d => d.domain === "sea");
+  if (!ships.length) return "";
+  const landSel = ds.filter(d => d.domain === "land");
+  return ships.slice(0, 2).map(sh => {
+    const cargo = sh.cargo || [];
+    const near = game.T[sh.prov].isSea ? game.loadableFor(sh) : [];
+    const selOk = landSel.filter(d => near.includes(d));
+    const free = FLEET_CAPACITY - cargo.length;
+    return `<div class="sec" style="margin-top:8px"><h4>⚓ Fleet at ${esc(game.T[sh.prov].name)} <small>carrying ${cargo.length}/${FLEET_CAPACITY}</small></h4>
+      ${cargo.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">${cargo.map(d => `<span style="display:inline-flex;align-items:center;gap:3px">${icon(d.type, 16)} ${ROMAN[(d.tier || 1) - 1]} · ${Math.round(d.str * 100)}%</span>`).join("")}</div>` : `<div class="muted" style="margin-bottom:6px">Empty. Units within ${BOARD_RADIUS} tiles of the fleet (highlighted) can board.</div>`}
+      <div class="acts" style="margin-top:0">
+        ${free > 0 && selOk.length ? `<button class="btn sm gold" data-act="board" data-mode="sel" data-ship="${sh.id}">Board ${Math.min(free, selOk.length)} selected unit${Math.min(free, selOk.length) > 1 ? "s" : ""}</button>` : ""}
+        ${free > 0 ? `<button class="btn sm" data-act="board" data-mode="near" data-ship="${sh.id}" ${near.length ? "" : "disabled"}>Board nearby units (${near.length} in range)</button>` : ""}
+        ${cargo.length ? `<button class="btn sm gold" data-act="unload" data-ship="${sh.id}">Unload…</button>` : ""}
+      </div></div>`;
+  }).join("");
+}
+
 function updatePreview() {
   view.preview = null;
+  if (unloadMode != null) return;
   if (!game || !view.selected.size || !view.hoverProv) return;
   view.preview = { none: true, to: view.hoverProv.id };
   const d = [...view.selected].map(i => game.divs.get(i)).find(x => x && x.domain === "land") || game.divs.get([...view.selected][0]);
@@ -689,7 +735,7 @@ function finishOrder(p) {
 
 function orderWithDiplomacy(p, clickedTag) {
   const hasLand = [...view.selected].some(i => game.divs.get(i)?.domain === "land");
-  const target = clickedTag || (p.ctrl !== player ? p.ctrl : null);
+  const target = clickedTag || (p.ctrl && p.ctrl !== player ? p.ctrl : null);
   if (!hasLand || !target) return finishOrder(p);
   const rel = game.relation(player, target);
   const T = game.c(target);
@@ -721,7 +767,7 @@ function confirmBox(title, html, okLabel, cls, onOk) {
 function moveSelected(p) {
   if (!view.selected.size || !p) return 0;
   const n = game.orderGroup([...view.selected], p.id);
-  if (!n) toast(view.selected.size && [...view.selected].every(i => game.divs.get(i)?.domain === "sea") ? "Fleets can only sail to friendly coastal provinces." : [...view.selected].every(i => game.divs.get(i)?.domain === "air") ? "Aircraft can only fly to friendly provinces." : "No route there. You can't enter neutral countries.");
+  if (!n) toast(view.selected.size && [...view.selected].every(i => game.divs.get(i)?.domain === "sea") ? "No sea route there." : [...view.selected].every(i => game.divs.get(i)?.domain === "air") ? "Aircraft can only fly to friendly provinces." : "No route there. You can't enter neutral countries.");
   else if (game.atWar(player, p.ctrl)) toast(`${n} division${n > 1 ? "s" : ""} attacking ${p.name}`);
   view.dirty = true;
   showDivInfo();
@@ -775,13 +821,14 @@ canvas.addEventListener("pointerup", e => {
     const { x0, y0, x1, y1 } = view.box; view.box = null;
     if (d.moved) {
       const [ax, ay] = view.toWorld(Math.min(x0, x1), Math.min(y0, y1)), [bx, by] = view.toWorld(Math.max(x0, x1), Math.max(y0, y1));
-      for (const div of game.unitsOf(player)) { const c = game.P[div.prov].c; if (c[0] >= ax && c[0] <= bx && c[1] >= ay && c[1] <= by) view.selected.add(div.id); }
+      for (const div of game.unitsOf(player)) { const c = game.T[div.prov].c; if (c[0] >= ax && c[0] <= bx && c[1] >= ay && c[1] <= by) view.selected.add(div.id); }
       showDivInfo(); view.dirty = true; return;
     }
   }
   if (d.btn === 2) {
     if (d.moved) return;
     if (view.buildMode) { setBuildMode(null); return; }
+    if (cancelUnload()) { toast("Unloading cancelled."); showDivInfo(); return; }
     if (view.selected.size) { view.selected.clear(); view.preview = null; $("info").classList.add("hidden"); view.dirty = true; updateMoveHint(); }
     return;
   }
@@ -792,7 +839,30 @@ canvas.addEventListener("pointerup", e => {
 canvas.addEventListener("contextmenu", e => e.preventDefault());
 canvas.addEventListener("wheel", e => { e.preventDefault(); view.zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
 
+let unloadMode = null;
+function cancelUnload() { if (unloadMode != null) { unloadMode = null; view.dirty = true; return true; } return false; }
+function fleetHighlight() {
+  const ships = [...view.selected].map(i => game.divs.get(i)).filter(d => d && d.domain === "sea" && game.T[d.prov].isSea);
+  if (!ships.length) { view.seaHighlight = null; return; }
+  const m = new Map();
+  for (const sh of ships.slice(0, 3)) for (const [id] of game.landDistFrom(sh.prov, BOARD_RADIUS)) m.set(id, unloadMode != null ? "rgba(120,230,140,0.38)" : "rgba(255,226,122,0.30)");
+  view.seaHighlight = m;
+}
 function handleClick(x, y, shift, ptype) {
+  if (unloadMode != null) {
+    const p = view.provAt(x, y);
+    const ship = game.divs.get(unloadMode);
+    if (!ship) { unloadMode = null; return; }
+    if (!p || p.isSea) { toast("Click a land tile to unload onto."); return; }
+    if (!game.landDistFrom(ship.prov, BOARD_RADIUS).has(p.id)) { toast(`Too far: unload within ${BOARD_RADIUS} tiles of the fleet (the highlighted area).`); return; }
+    const rel = game.relation(player, p.ctrl);
+    if (rel === "neutral" && p.ctrl) { const taxed = !game.c(player).wargoals[p.ctrl]; game.forceWar(player, p.ctrl); toast(`Landing on ${game.c(p.ctrl).name}'s coast: war!${taxed ? ` (war tax ${money(10000)})` : ""}`, "war"); updateHud(); }
+    else if (rel === "ally" && game.c(p.ctrl).overlord !== player && [...p.divs].length === 0 && false) {}
+    const r = game.disembark(ship.id, p.id);
+    toast(r.n ? `${r.n} unit${r.n > 1 ? "s" : ""} landed near ${p.name}.` : r.why);
+    if (r.n) unloadMode = null;
+    showDivInfo(); view.dirty = true; return;
+  }
   if (view.buildMode) {
     const p = view.provAt(x, y);
     if (p && game.queueBuild(player, view.buildMode, p.id)) { toast(`${BUILD[view.buildMode].name} queued in ${p.name}.`); if (tab === "production") renderPanel(); }
@@ -802,12 +872,12 @@ function handleClick(x, y, shift, ptype) {
   }
   const ctr = view.countersAt(x, y);
   const selProvs = new Set([...view.selected].map(i => game.divs.get(i)?.prov));
-  if (ctr && ctr.tag === player && view.selected.size && !shift && !selProvs.has(ctr.prov)) { finishOrder(game.P[ctr.prov]); return; }
+  if (ctr && ctr.tag === player && view.selected.size && !shift && !selProvs.has(ctr.prov)) { finishOrder(game.T[ctr.prov]); return; }
   if (ctr && ctr.tag === player) {
     if (shift && ctr.ids.every(i => view.selected.has(i))) { for (const i of ctr.ids) view.selected.delete(i); view.dirty = true; if (view.selected.size) showDivInfo(); else $("info").classList.add("hidden"); return; }
     if (!shift) view.selected.clear();
     const now = performance.now();
-    const ids = now - lastTap < 350 ? game.divsOf(player, UNIT[ctr.type].domain).filter(d => d.type === ctr.type && Math.hypot(game.P[d.prov].c[0] - game.P[ctr.prov].c[0], game.P[d.prov].c[1] - game.P[ctr.prov].c[1]) < 120).map(d => d.id) : ctr.ids;
+    const ids = now - lastTap < 350 ? game.divsOf(player, UNIT[ctr.type].domain).filter(d => d.type === ctr.type && Math.hypot(game.T[d.prov].c[0] - game.T[ctr.prov].c[0], game.T[d.prov].c[1] - game.T[ctr.prov].c[1]) < 120).map(d => d.id) : ctr.ids;
     lastTap = now;
     for (const id of ids) view.selected.add(id);
     view.selProv = null; showDivInfo(); return;
@@ -815,6 +885,7 @@ function handleClick(x, y, shift, ptype) {
   const p = view.provAt(x, y);
   if (view.selected.size && !shift) {
     if (!p) { view.selected.clear(); $("info").classList.add("hidden"); view.dirty = true; return; }
+    if (p.isSea && [...view.selected].every(i => game.divs.get(i)?.domain !== "sea")) { toast("Land units can't walk on water. Select a fleet, use Board units, then sail and unload."); return; }
     orderWithDiplomacy(p, ctr && ctr.tag !== player ? ctr.tag : null);
     return;
   }
@@ -847,7 +918,7 @@ addEventListener("keydown", e => {
   else if (k === "b") toggleDock();
   else if (k === "m") toggleMode();
   else if (k === "l") $("legend").classList.toggle("hidden");
-  else if (k === "escape") { if (view.buildMode) setBuildMode(null); else if (view.selected.size) { view.selected.clear(); view.preview = null; $("info").classList.add("hidden"); updateMoveHint(); } else openTab(null); view.dirty = true; }
+  else if (k === "escape") { if (cancelUnload()) { toast("Unloading cancelled."); showDivInfo(); } else if (view.buildMode) setBuildMode(null); else if (view.selected.size) { view.selected.clear(); view.preview = null; $("info").classList.add("hidden"); updateMoveHint(); } else openTab(null); view.dirty = true; }
   else if (k === "+" || k === "=") view.zoomAt(view.vw / 2, view.vh / 2, 1.25);
   else if (k === "-") view.zoomAt(view.vw / 2, view.vh / 2, 0.8);
   if (["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) { e.preventDefault(); panKeys.add(k); }
@@ -904,7 +975,7 @@ function loopInner(now) {
     if (view.selected.size) showDivInfo(); else if (view.selProv) showProvInfo(view.selProv);
   }
   if (game && game.pending.length && $("modal").classList.contains("hidden")) showPending(game.pending[0]);
-  if (view && view.dirty) view.draw();
+  if (view && view.dirty) { if (game) fleetHighlight(); view.draw(); }
 }
 
 function showGameOver() {

@@ -22,7 +22,7 @@ export function installDiplomacy(G) {
     },
 
     borderTiles(from, to, max = 6) {
-      return this.P.filter(p => p.owner === to && p.adj.some(n => this.P[n].owner === from)).sort((x, y) => y.vp - x.vp).slice(0, max);
+      return this.P.filter(p => p.owner === to && p.adj.some(n => this.T[n].owner === from)).sort((x, y) => y.vp - x.vp).slice(0, max);
     },
 
     conqueredFrom(a, b) {
@@ -133,7 +133,7 @@ export function installDiplomacy(G) {
       const A = this.countries[from].name, B = this.countries[to].name;
       if (type === "alliance") return `${A} proposes an alliance with ${B} (${this.allianceKind(from, to).text.toLowerCase()}).`;
       if (type === "gold") return `${A} demands ${fmtMoney(terms.gold)} from ${B}.`;
-      if (type === "tiles") return `${A} demands ${terms.tiles.length} province${terms.tiles.length > 1 ? "s" : ""} from ${B}: ${terms.tiles.map(i => this.P[i].name).join(", ")}.`;
+      if (type === "tiles") return `${A} demands ${terms.tiles.length} province${terms.tiles.length > 1 ? "s" : ""} from ${B}: ${terms.tiles.map(i => this.T[i].name).join(", ")}.`;
       if (type === "puppet") return `${A} demands that ${B} become its puppet.`;
       if (type === "peace") {
         const parts = [];
@@ -148,7 +148,7 @@ export function installDiplomacy(G) {
 
     propose(type, from, to, terms = {}) {
       if (!this.countries[to].alive || !this.countries[from].alive) return { ok: false, msg: "That country no longer exists." };
-      if (type === "tiles") terms.tiles = (terms.tiles || []).filter(i => this.P[i].owner === to);
+      if (type === "tiles") terms.tiles = (terms.tiles || []).filter(i => this.T[i].owner === to);
       if (type === "tiles" && !terms.tiles.length) return { ok: false, msg: "No provinces selected." };
       if (to === this.player) {
         if (this.pending.some(p => p.from === from && p.type === type)) return { ok: false, msg: "Already waiting." };
@@ -190,7 +190,7 @@ export function installDiplomacy(G) {
         const amt = Math.min(terms.gold, this.countries[to].money);
         this.countries[to].money -= amt; this.countries[from].money += amt;
       } else if (type === "tiles") {
-        for (const id of terms.tiles) if (this.P[id].owner === to) this.transferProvince(this.P[id], from);
+        for (const id of terms.tiles) if (this.T[id].owner === to) this.transferProvince(this.T[id], from);
         this.updateEconomyCache(); this.computeSupply();
       } else if (type === "puppet") {
         this.setPuppet(from, to);
