@@ -1,10 +1,10 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795223430";
-import { Game, dateStr } from "./sim.js?v=1795223430";
-import { runAI, aiAcceptsFaction } from "./ai.js?v=1795223430";
-import { MapView, drawUnitIcon } from "./render.js?v=1795223430";
+import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795223550";
+import { Game, dateStr } from "./sim.js?v=1795223550";
+import { runAI, aiAcceptsFaction } from "./ai.js?v=1795223550";
+import { MapView, drawUnitIcon } from "./render.js?v=1795223550";
 
 const $ = id => document.getElementById(id);
-const SPEEDS = [0, 2, 4, 8, 20, 60];
+const SPEEDS = [0, 0.4, 0.8, 1.6, 4, 12];
 const END = Date.UTC(1950, 0, 1);
 const fmt = n => { const a = Math.abs(n), sg = n < 0 ? "-" : ""; return a >= 1e9 ? sg + (a / 1e9).toFixed(2) + "B" : a >= 1e7 ? sg + (a / 1e6).toFixed(0) + "M" : a >= 1e6 ? sg + (a / 1e6).toFixed(1) + "M" : a >= 1e4 ? sg + (a / 1000).toFixed(0) + "k" : a >= 1000 ? sg + (a / 1000).toFixed(1) + "k" : sg + Math.floor(a).toString(); };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -32,7 +32,7 @@ let battleLog = [], unread = 0, logFilter = "all", endShown = false, acc = 0, la
 const canvas = $("map");
 
 async function boot() {
-  const res = await fetch("data/map.json?v=1795223430");
+  const res = await fetch("data/map.json?v=1795223550");
   MAP = await res.json();
   const preview = new Game(MAP, { seed: 1 });
   view = new MapView(canvas, preview);
@@ -88,8 +88,8 @@ function onEvent(e) {
   if (e.type === "date") return;
   if (LOG_TYPES[e.type] && !(e.type === "research" && false)) {
     battleLog.push(e); if (battleLog.length > 2000) battleLog.shift();
-    if (tab !== "battlelog" && e.type !== "research") { unread++; updateLogBadge(); }
-    if (tab === "battlelog") panelDay = -1;
+    if (document.body.classList.contains("dockmin") && e.type !== "research" && e.type !== "airesearch") { unread++; updateLogBadge(); }
+    dockDirty = true;
   }
   if ((e.type === "airesearch" || e.type === "justify") && !e.tags.includes(player)) return;
   const mine = e.tags.includes(player) || (e.tags.some(t => game.friendly(player, t)) && (e.type === "war" || e.type === "major"));
@@ -97,7 +97,6 @@ function onEvent(e) {
   if (e.type === "world" && !mine) return;
   addLog(e);
   if ((e.type === "war" || e.type === "major") && (mine || major)) toast(e.text, e.type === "war" ? "war" : "");
-  if (e.type === "war" && e.tags[1] === player && / declared war on /.test(e.text)) { setSpeed(0); }
   panelDay = -1;
 }
 
@@ -115,8 +114,22 @@ function renderBattleLog() {
   const list = battleLog.filter(e => logFilter === "all" ? true : LOG_TYPES[e.type] === logFilter).slice(-300).reverse();
   const icons = { war: "⚔", major: "★", justify: "⚑", diplo: "✉", world: "✦", airesearch: "⚗", research: "⚗" };
   return `<div class="logfilters">${filters.map(([k, n]) => `<button class="btn sm ${logFilter === k ? "gold" : ""}" data-act="logf" data-f="${k}">${n}</button>`).join("")}</div>
-  <p class="muted" style="margin:6px 0 10px">Everything every country does: research, war goals, declarations of war, capitulations and alliances. Newest first.</p>
   ${list.map(e => `<div class="logrow ${e.type}"><span class="li">${icons[e.type] || "•"}</span><div class="grow"><div class="ld">${dateStr(e.time)} ${e.tags.filter(t => COUNTRIES[t]).slice(0, 2).map(flag).join("")}</div><div>${esc(e.text)}</div></div></div>`).join("") || `<div class="muted">Nothing has happened yet. Unpause the game!</div>`}`;
+}
+
+let dockDirty = true, lastDock = 0;
+function renderDock() {
+  dockDirty = false; lastDock = performance.now();
+  const body = $("dockBody");
+  if (!body || document.body.classList.contains("dockmin")) return;
+  body.innerHTML = renderBattleLog();
+}
+function toggleDock(force) {
+  const min = force != null ? force : !document.body.classList.contains("dockmin");
+  document.body.classList.toggle("dockmin", min);
+  $("dockMin").textContent = min ? "▴" : "▾";
+  document.querySelector('#sidebar [data-tab="battlelog"]')?.classList.toggle("on", !min);
+  if (!min) { unread = 0; updateLogBadge(); renderDock(); }
 }
 
 function addLog(e) {
@@ -139,12 +152,16 @@ function toast(text, cls = "") {
 function setupHud() {
   $("speeds").innerHTML = `<button class="pause" data-s="0" title="Pause">❚❚</button>` + [1, 2, 3, 4, 5].map(s => `<button data-s="${s}" title="Speed ${s}">${s}</button>`).join("");
   $("speeds").onclick = e => { const b = e.target.closest("button"); if (b) setSpeed(+b.dataset.s); };
-  document.querySelectorAll("#sidebar [data-tab]").forEach(b => b.onclick = () => openTab(tab === b.dataset.tab ? null : b.dataset.tab));
+  document.querySelectorAll("#sidebar [data-tab]").forEach(b => b.onclick = () => b.dataset.tab === "battlelog" ? toggleDock() : openTab(tab === b.dataset.tab ? null : b.dataset.tab));
   $("modeBtn").onclick = toggleMode;
   $("panelClose").onclick = () => openTab(null);
   $("panelBody").addEventListener("click", onPanelClick);
   $("panelBody").addEventListener("input", onPanelInput);
   $("info").addEventListener("click", onPanelClick);
+  $("dockBody").addEventListener("click", onPanelClick);
+  $("dockMin").onclick = () => toggleDock();
+  $("dock").classList.remove("hidden");
+  toggleDock(false);
   bindTips(document.body);
   $("legend").innerHTML = `<div class="lg-head">Units <span class="muted">(L)</span></div>` + UNIT_ORDER.map(t => `<div class="lg" data-tip="<b>${UNIT[t].name}</b><br>${esc(UNIT[t].desc)}">${icon(t, 20)}<span>${UNIT[t].name}</span></div>`).join("");
   updateHud();
@@ -286,7 +303,7 @@ function renderArmy() {
     const cost = [money(k.money), k.eq ? `${fmt(k.eq)} equip.` : "", k.tanks ? `${k.tanks} tanks` : "", k.planes ? `${k.planes} aircraft` : "", `${k.mp}k men`, `${k.days} days`, `upkeep ${money(k.upkeep)}/day`].filter(Boolean).join(" · ");
     const old = units.filter(d => d.type === t && (d.tier || 1) < tier);
     const upc = old.length ? game.upgradeCost(player, old[0]) : null;
-    const speed = (u.hours / 8).toFixed(u.hours < 16 ? 1 : 0);
+    const speed = Math.round(u.hours / 1.6);
     return `<div class="row unitcard">${icon(t, 30)}<div class="grow"><div class="t">${u.name} <span class="tier">Tier ${ROMAN[tier - 1]}</span> <span class="muted">· ${count(t)} active · ${Math.round(TIER_MULT[tier - 1] * 100)}% power</span></div><div class="s">${esc(u.desc)}</div><div class="s">${cost} · ~${speed}s per province at speed 3</div>${block ? `<div class="s" style="color:#ff9a7a">${esc(block)}</div>` : ""}${old.length ? `<div class="s" style="margin-top:4px">${old.length} older unit${old.length > 1 ? "s" : ""} below tier ${ROMAN[tier - 1]} · <button class="btn sm" data-act="upgrade" data-type="${t}">Upgrade (${money(upc.money)} each)</button></div>` : ""}${tier < 5 ? `<div class="s muted">Research the next ${u.name} tier to unlock tier ${ROMAN[tier]}.</div>` : ""}</div>
       <div style="display:flex;flex-direction:column;gap:3px"><button class="btn sm gold" data-act="train" data-type="${t}" data-n="1" ${block ? "disabled" : ""}>Train</button><button class="btn sm" data-act="train" data-type="${t}" data-n="5" ${block ? "disabled" : ""}>×5</button></div></div>`;
   }).join("");
@@ -358,7 +375,7 @@ function renderHelp() {
   <h4>Units</h4><ul>
     ${UNIT_ORDER.map(t => `<li style="list-style:none;margin-left:-18px;display:flex;gap:8px;align-items:center">${icon(t, 22)}<span><b>${UNIT[t].name}</b>: ${esc(UNIT[t].desc)}</span></li>`).join("")}
     <li>Every counter shows the unit type icon, how many units are in it, and green (strength) and yellow (organization) bars. A white border means yours, blue means an ally, red means an enemy.</li>
-    <li>Movement takes time. At speed 3, infantry needs about 5 seconds per province, tanks about 3, and aircraft and fleets about 1 to 2. Rough terrain is slower.</li></ul>
+    <li>Movement takes time. At speed 1, infantry needs about 100 seconds per province (about 25 at speed 3, 10 at speed 4 and 3 at speed 5). Tanks are about twice as fast, aircraft and fleets faster still. Rough terrain is slower.</li></ul>
   <h4>One unit per tile</h4><ul>
     <li>Each tile can hold <b>one</b> land unit (plus one air wing and one fleet). Units can't stack.</li>
     <li>New units appear on a free tile of your land, nearest your capital. You can only train when you have a free tile, so <b>more land means a bigger army</b>.</li>
@@ -419,8 +436,8 @@ function onPanelClick(e) {
   else if (a === "selair") { view.selected = new Set(game.divsOf(player, "air").map(d => d.id)); showDivInfo(); }
   else if (a === "selships") { view.selected = new Set(game.divsOf(player, "sea").map(d => d.id)); showDivInfo(); }
   else if (a === "justify") { if (game.justify(player, el.dataset.t)) toast(`Justifying a war goal against ${COUNTRIES[el.dataset.t].name}…`); if (view.selProv) showProvInfo(view.selProv); }
-  else if (a === "forcewar") { if (game.forceWar(player, el.dataset.t)) { toast(`You declared war on ${COUNTRIES[el.dataset.t].name}!`, "war"); setSpeed(0); } else toast("You can't declare war on them right now."); }
-  else if (a === "declare") { if (game.declareWar(player, el.dataset.t)) setSpeed(0); }
+  else if (a === "forcewar") { if (game.forceWar(player, el.dataset.t)) { toast(`You declared war on ${COUNTRIES[el.dataset.t].name}!`, "war"); } else toast("You can't declare war on them right now."); }
+  else if (a === "declare") { game.declareWar(player, el.dataset.t); }
   else if (a === "guarantee") game.guarantee(player, el.dataset.t);
   else if (a === "join") {
     if (aiAcceptsFaction(game, player, el.dataset.f)) game.joinFaction(player, el.dataset.f);
@@ -432,7 +449,7 @@ function onPanelClick(e) {
     else toast(`${COUNTRIES[el.dataset.t].name} declines your invitation.`);
   }
   else if (a === "found") game.createFaction(player, `${c.adj} Pact`);
-  else if (a === "logf") logFilter = el.dataset.f;
+  else if (a === "logf") { logFilter = el.dataset.f; renderDock(); return; }
   else if (a === "dip") { dipModal(el.dataset.t); return; }
   else if (a === "upgrade") { const n = game.upgradeUnits(player, el.dataset.type); if (!n) toast("Can't afford the upgrade right now."); }
   else if (a === "stop") { for (const id of view.selected) { const d = game.divs.get(id); if (d) { d.path = []; d.attacking = null; } } }
@@ -541,10 +558,10 @@ function dipModal(t) {
     if (d === "justify") { if (game.justify(player, t)) toast(`Justifying a war goal against ${T.name}…`); updateHud(); dipModal(t); return; }
     if (d === "declare") {
       const ok = game.forceWar(player, t);
-      if (ok) { toast(`You declared war on ${T.name}!`, "war"); dipState.resume = 0; closeDip(); updateHud(); panelDay = -1; view.dirty = true; } else toast("You can't declare war on them right now.");
+      if (ok) { toast(`You declared war on ${T.name}!`, "war"); closeDip(); updateHud(); panelDay = -1; view.dirty = true; } else toast("You can't declare war on them right now.");
       return;
     }
-    if (d === "betray") { const myF = game.factionOf(player); game.betray(player, t); toast(`You betrayed ${myF ? "the " + myF.name : T.name} and declared war on ${T.name}!`, "war"); dipState.resume = 0; closeDip(); updateHud(); panelDay = -1; view.dirty = true; return; }
+    if (d === "betray") { const myF = game.factionOf(player); game.betray(player, t); toast(`You betrayed ${myF ? "the " + myF.name : T.name} and declared war on ${T.name}!`, "war"); closeDip(); updateHud(); panelDay = -1; view.dirty = true; return; }
     if (d === "annex") { game.annexPuppet(player, t); closeDip(); return; }
     if (d === "release") { game.releasePuppet(player, t); closeDip(); return; }
     if (d === "send") {
@@ -815,7 +832,7 @@ addEventListener("keydown", e => {
   else if (k === "a") openTab(tab === "army" ? null : "army");
   else if (k === "d") openTab(tab === "diplomacy" ? null : "diplomacy");
   else if (k === "h" || k === "?") openTab(tab === "help" ? null : "help");
-  else if (k === "b") openTab(tab === "battlelog" ? null : "battlelog");
+  else if (k === "b") toggleDock();
   else if (k === "m") toggleMode();
   else if (k === "l") $("legend").classList.toggle("hidden");
   else if (k === "escape") { if (view.buildMode) setBuildMode(null); else if (view.selected.size) { view.selected.clear(); view.preview = null; $("info").classList.add("hidden"); updateMoveHint(); } else openTab(null); view.dirty = true; }
@@ -871,6 +888,7 @@ function loopInner(now) {
     if (game.gameOver) showGameOver();
   }
   if (game && now - lastHud > 250) { updateHud(); lastHud = now; }
+  if (game && dockDirty && now - lastDock > 400 && !$("dock").matches(":hover")) renderDock();
   if (game && tab && now - lastPanel > 400 && Math.floor(game.hourCount / 24) !== panelDay && !document.querySelector("#panelBody:hover input")) { renderPanel(); lastPanel = now; }
   if (game && now - lastPanel > 400 && Math.floor(game.hourCount / 24) !== infoDay && !$("info").classList.contains("hidden") && !$("info").matches(":hover")) {
     if (view.selected.size) showDivInfo(); else if (view.selProv) showProvInfo(view.selProv);
