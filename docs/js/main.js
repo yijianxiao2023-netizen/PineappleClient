@@ -1,7 +1,7 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795224314";
-import { Game, dateStr } from "./sim.js?v=1795224314";
-import { runAI, aiAcceptsFaction } from "./ai.js?v=1795224314";
-import { MapView, drawUnitIcon } from "./render.js?v=1795224314";
+import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795224510";
+import { Game, dateStr } from "./sim.js?v=1795224510";
+import { runAI, aiAcceptsFaction } from "./ai.js?v=1795224510";
+import { MapView, drawUnitIcon } from "./render.js?v=1795224510";
 
 const $ = id => document.getElementById(id);
 const SPEEDS = [0, 0.04, 0.08, 0.16, 0.4, 0.8];
@@ -32,7 +32,7 @@ let battleLog = [], unread = 0, logFilter = "all", endShown = false, acc = 0, la
 const canvas = $("map");
 
 async function boot() {
-  const res = await fetch("data/map.json?v=1795224314");
+  const res = await fetch("data/map.json?v=1795224510");
   MAP = await res.json();
   const preview = new Game(MAP, { seed: 1 });
   view = new MapView(canvas, preview);
@@ -156,6 +156,15 @@ function setupHud() {
   $("modeBtn").onclick = toggleMode;
   $("panelClose").onclick = () => openTab(null);
   $("panelBody").addEventListener("click", onPanelClick);
+  $("panelBody").addEventListener("wheel", e => {
+    const el = $("panelBody");
+    if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY) || el.scrollWidth <= el.clientWidth + 1) return;
+    const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? el.clientHeight : 1);
+    const canH = dy > 0 ? el.scrollLeft + el.clientWidth < el.scrollWidth - 1 : el.scrollLeft > 0;
+    const canV = dy > 0 ? el.scrollTop + el.clientHeight < el.scrollHeight - 1 : el.scrollTop > 0;
+    const overTree = e.target.closest(".ftree, .wide");
+    if (canH && (overTree || !canV)) { el.scrollLeft += dy; e.preventDefault(); }
+  }, { passive: false });
   $("panelBody").addEventListener("input", onPanelInput);
   $("info").addEventListener("click", onPanelClick);
   $("dockBody").addEventListener("click", onPanelClick);
