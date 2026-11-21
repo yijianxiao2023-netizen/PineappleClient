@@ -23,6 +23,9 @@ function icon(type, size = 22) {
   return `<img class="uicon" src="${iconCache[key]}" width="${size}" height="${size}" alt="${UNIT[type].name}">`;
 }
 const money = n => "$" + fmt(n);
+const hpColor = v => v > 0.6 ? "#5ec26a" : v > 0.3 ? "#e3b83c" : "#e0533f";
+const crew = d => UNIT[d.type].domain === "land" ? UNIT[d.type].mp * 1000 : UNIT[d.type].domain === "air" ? (d.type === "bmb" ? 60 : 40) : 1200;
+const men = d => `${Math.round(d.str * crew(d)).toLocaleString()} / ${crew(d).toLocaleString()} ${UNIT[d.type].domain === "air" ? "aircrew" : UNIT[d.type].domain === "sea" ? "sailors" : "men"}`;
 
 let MAP, game, view, player = null, speed = 0, lastSpeed = 3, tab = null, picked = null;
 let endShown = false, acc = 0, lastFrame = performance.now(), lastHud = 0, lastPanel = 0, panelDay = -1, infoDay = -1;
@@ -319,6 +322,11 @@ function renderHelp() {
     ${UNIT_ORDER.map(t => `<li style="list-style:none;margin-left:-18px;display:flex;gap:8px;align-items:center">${icon(t, 22)}<span><b>${UNIT[t].name}</b>: ${esc(UNIT[t].desc)}</span></li>`).join("")}
     <li>Every counter shows the unit type icon, how many units are in it, and green (strength) and yellow (organization) bars. A white border means yours, blue means an ally, red means an enemy.</li>
     <li>Movement takes time. At speed 3, infantry needs about 5 seconds per province, tanks about 3, and aircraft and fleets about 1 to 2. Rough terrain is slower.</li></ul>
+  <h4>Attacking &amp; betrayal</h4><ul>
+    <li>Send your units onto <b>any</b> other country's land or units to attack them. If you aren't already at war, you'll be asked to confirm, and then war is declared on them and their whole faction.</li>
+    <li>Every province you take <b>becomes yours</b> and turns your color. It gives you its factories, income and industry.</li>
+    <li>Hover over any counter to see each unit's health bar (soldiers left). Click a battle's province to see both sides.</li>
+    <li>You can <b>betray your allies</b> by attacking one of their units. You leave your faction and join the other side for the rest of the match. Your allies will never betray you first, but anyone else can attack you.</li></ul>
   <h4>Warfare</h4><ul>
     <li>Moving into a province with enemy divisions starts a battle. The bar under the swords shows which side is winning.</li>
     <li>Defenders get bonuses from terrain, forts and digging in. Attack with about 2 to 1 odds or bring armor.</li>
@@ -404,19 +412,33 @@ function showProvInfo(p) {
   const queued = game.c(p.owner).construction.filter(i => i.prov === p.id).length;
   el.innerHTML = `<h3>${flag(p.owner)} ${esc(p.name)}</h3><div class="sub">${TERRAIN[p.terrain].name}${p.vp ? " · Victory points " + p.vp : ""}${p.capital && p.capital === p.owner ? " · Capital" : ""}</div>
   <div class="kv"><span class="k">Owner</span><span>${COUNTRIES[p.owner].name}</span>
-  ${p.ctrl !== p.owner ? `<span class="k">Occupied by</span><span>${COUNTRIES[p.ctrl].name}</span>` : ""}
+  ${p.core !== p.owner ? `<span class="k">Taken from</span><span>${COUNTRIES[p.core].name}</span>` : ""}
   <span class="k">Relation</span><span><span class="chip ${p.ctrl === player ? "self" : rel}">${p.ctrl === player ? "Yours" : rel}</span></span>
   <span class="k">Factories</span><span>${p.civ} civilian, ${p.mil} military (${p.slots} slots${queued ? `, ${queued} queued` : ""})</span>
   <span class="k">Fort level</span><span>${p.fort}</span>
-  <span class="k">Income</span><span>${money((0.5 + 0.3 * p.vp) * (p.owner === p.ctrl ? 1 : 0.6))}/day for its controller</span>
+  <span class="k">Income</span><span>${money((0.5 + 0.3 * p.vp) * (p.core === p.owner ? 1 : 0.8))}/day for its owner</span>
   <span class="k">Coast</span><span>${p.coastal ? "Coastal (fleets can dock)" : "Inland"}</span>
   <span class="k">Units</span><span>${byType.join("") || "None"}</span></div>
+  ${battleHtml(p)}
   <div class="acts">
     ${here.get(player) ? `<button class="btn sm" data-act="selprov" data-p="${p.id}">Select my units</button>` : ""}
     ${view.selected.size ? `<button class="btn sm gold" data-act="movehere" data-p="${p.id}">Move selected here</button>` : ""}
     ${own ? ["civ", "mil", "fort"].map(t => `<button class="btn sm" data-act="pbuild" data-type="${t}" data-p="${p.id}" ${game.canBuild(player, t, p.id) ? "" : "disabled"}>+ ${t === "civ" ? "Civilian" : t === "mil" ? "Military" : "Fort"}</button>`).join("") : ""}
   </div>`;
   infoDay = Math.floor(game.hourCount / 24);
+}
+
+function battleHtml(p) {
+  const b = game.battles.get(p.id);
+  if (!b) return "";
+  const attackers = [...game.divs.values()].filter(d => d.attacking === p.id);
+  const defenders = [...p.divs].map(i => game.divs.get(i)).filter(d => d && game.atWar(d.tag, b.attTag));
+  const share = b.A / (b.A + b.D);
+  const side = list => list.slice(0, 8).map(d => `<div class="divrow">${icon(d.type, 16)}<div class="hp"><i style="width:${d.str * 100}%;background:${hpColor(d.str)}"></i><span>${men(d)}</span></div>${flag(d.tag)}</div>`).join("") + (list.length > 8 ? `<div class="muted">+${list.length - 8} more</div>` : "");
+  return `<div class="battle"><div class="bt-head">⚔ Battle for ${esc(p.name)}</div>
+    <div class="bt-bar"><i style="width:${share * 100}%"></i></div>
+    <div class="bt-sides"><span>${flag(b.attTag)} Attack ${Math.round(share * 100)}%</span><span>Defense ${Math.round((1 - share) * 100)}% ${flag(b.defTag)}</span></div>
+    <div class="grid2"><div>${side(attackers)}</div><div>${side(defenders)}</div></div></div>`;
 }
 
 function showDivInfo() {
@@ -429,15 +451,52 @@ function showDivInfo() {
   const land = ds.filter(d => d.domain === "land");
   const avg = (arr, k) => arr.length ? Math.round(arr.reduce((s, d) => s + d[k], 0) / arr.length * 100) : 0;
   const summary = UNIT_ORDER.map(t => { const n = ds.filter(d => d.type === t).length; return n ? `<span style="display:inline-flex;align-items:center;gap:4px;margin:0 10px 4px 0">${icon(t, 20)}<b>${n}</b> ${UNIT[t].name}</span>` : ""; }).join("");
-  const rows = ds.slice(0, 14).map(d => `<div class="divrow">${icon(d.type, 18)}<div><div class="bar green"><i style="width:${d.str * 100}%"></i></div>${d.domain === "land" ? `<div class="bar"><i style="width:${d.org * 100}%"></i></div>` : ""}</div><span class="muted">${esc(game.P[d.prov].name)}${d.attacking != null ? " ⚔" : d.path.length ? " → " + esc(game.P[d.path[d.path.length - 1].id].name) : ""}${d.domain === "land" && !sup.has(d.prov) ? " ⚠" : ""}</span></div>`).join("");
+  const rows = ds.slice(0, 14).map(d => `<div class="divrow">${icon(d.type, 18)}<div><div class="hp"><i style="width:${d.str * 100}%;background:${hpColor(d.str)}"></i><span>${men(d)}</span></div>${d.domain === "land" ? `<div class="bar"><i style="width:${d.org * 100}%"></i></div>` : ""}</div><span class="muted">${esc(game.P[d.prov].name)}${d.attacking != null ? " ⚔" : d.path.length ? " → " + esc(game.P[d.path[d.path.length - 1].id].name) : ""}${d.domain === "land" && !sup.has(d.prov) ? " ⚠" : ""}</span></div>`).join("");
   el.innerHTML = `<h3>${flag(player)} ${ds.length} unit${ds.length > 1 ? "s" : ""} selected</h3><div style="display:flex;flex-wrap:wrap;margin-bottom:6px">${summary}</div>
-  ${land.length ? `<div class="kv"><span class="k">Strength</span><span>${avg(land, "str")}%</span><span class="k">Organization</span><span>${avg(land, "org")}%</span>
+  ${land.length ? `<div class="kv"><span class="k">Soldiers</span><span>${Math.round(land.reduce((s, d) => s + d.str * crew(d), 0)).toLocaleString()} / ${land.reduce((s, d) => s + crew(d), 0).toLocaleString()} (${avg(land, "str")}%)</span><span class="k">Organization</span><span>${avg(land, "org")}%</span>
   <span class="k">Supply</span><span>${land.every(d => sup.has(d.prov)) ? "Supplied" : '<b style="color:#ff8a7a">Some out of supply</b>'}</span></div>` : ""}
   <div style="margin-top:8px">${rows}${ds.length > 14 ? `<div class="muted">…and ${ds.length - 14} more</div>` : ""}</div>
   <div class="muted" style="margin-top:8px">Click a province to move${land.length ? " or attack" : ""}.${ds.some(d => d.domain === "air") ? " Aircraft can only fly to friendly provinces." : ""}${ds.some(d => d.domain === "sea") ? " Fleets can only dock in friendly coastal provinces." : ""}</div>
   <div class="acts"><button class="btn sm" data-act="stop">Stop</button><button class="btn sm" data-act="desel">Deselect</button></div>`;
   infoDay = Math.floor(game.hourCount / 24);
   view.dirty = true;
+}
+
+function finishOrder(p) {
+  if (moveSelected(p)) { view.selected.clear(); $("info").classList.add("hidden"); view.selProv = null; }
+  view.dirty = true;
+}
+
+function orderWithDiplomacy(p, clickedTag) {
+  const hasLand = [...view.selected].some(i => game.divs.get(i)?.domain === "land");
+  const target = clickedTag || (p.ctrl !== player ? p.ctrl : null);
+  if (!hasLand || !target) return finishOrder(p);
+  const rel = game.relation(player, target);
+  const T = game.c(target);
+  if (rel === "neutral") {
+    const tf = game.factionOf(target);
+    confirmBox(`Attack ${T.name}?`, `This declares war on <b>${T.name}</b>${tf ? ` and the whole <b>${esc(tf.name)}</b> (${[...tf.members].filter(m => m !== target).map(m => COUNTRIES[m].name).join(", ") || "no one else"})` : ""}. They will fight back.`, "Declare war & attack", "red", () => {
+      game.forceWar(player, target); finishOrder(p); panelDay = -1;
+    });
+    return;
+  }
+  if (rel === "ally" && clickedTag) {
+    const myF = game.factionOf(player);
+    const rival = game.rivalFaction(myF || game.factionOf(target));
+    confirmBox(`Betray ${myF ? "the " + myF.name : T.name}?`, `Attacking <b>${T.name}</b> means betraying your allies. You will <b>leave the ${esc(myF ? myF.name : "alliance")}</b> and join <b>${rival ? "the " + esc(rival.name) : "a new faction of your own"}</b> for the rest of this match. Every former ally will be at war with you.`, "Betray them", "red", () => {
+      game.betray(player, target); finishOrder(p); panelDay = -1; updateHud();
+    });
+    return;
+  }
+  finishOrder(p);
+}
+
+function confirmBox(title, html, okLabel, cls, onOk) {
+  const was = speed; setSpeed(0);
+  $("modalCard").innerHTML = `<h2 style="font-size:26px">${esc(title)}</h2><p>${html}</p><div class="acts"><button class="btn ${cls}" id="cOk">${esc(okLabel)}</button><button class="btn" id="cNo">Cancel</button></div>`;
+  $("modal").classList.remove("hidden");
+  $("cOk").onclick = () => { $("modal").classList.add("hidden"); onOk(); setSpeed(was); };
+  $("cNo").onclick = () => { $("modal").classList.add("hidden"); setSpeed(was); };
 }
 
 function moveSelected(p) {
@@ -471,6 +530,18 @@ canvas.addEventListener("pointermove", e => {
   } else if (e.pointerType === "mouse") {
     const p = view.provAt(e.clientX, e.clientY);
     if (p !== view.hoverProv) { view.hoverProv = p; view.dirty = true; }
+    const ctr = game ? view.countersAt(e.clientX, e.clientY) : null;
+    const tip = $("tip");
+    if (ctr) {
+      const ds = ctr.ids.map(i => game.divs.get(i)).filter(Boolean);
+      const rel = ctr.tag === player ? "Yours" : { ally: "Ally", enemy: "Enemy", neutral: "Neutral" }[game.relation(player, ctr.tag)];
+      tip.innerHTML = `<b>${COUNTRIES[ctr.tag].name}</b> · ${rel}<br>${ds.length} × ${UNIT[ctr.type].name}<div style="margin-top:4px;display:grid;gap:3px;min-width:200px">${ds.slice(0, 8).map(d => `<div class="hp"><i style="width:${d.str * 100}%;background:${hpColor(d.str)}"></i><span>${men(d)}</span></div>`).join("")}${ds.length > 8 ? `<span class="muted">+${ds.length - 8} more</span>` : ""}</div>${view.selected.size && ctr.tag !== player ? `<div style="margin-top:4px;color:#ff8a7a">Click to attack</div>` : ""}`;
+      tip.classList.remove("hidden");
+      const r = tip.getBoundingClientRect();
+      tip.style.left = Math.min(innerWidth - r.width - 8, e.clientX + 14) + "px";
+      tip.style.top = Math.min(innerHeight - r.height - 8, e.clientY + 14) + "px";
+      tip.dataset.map = "1";
+    } else if (tip.dataset.map) { tip.classList.add("hidden"); delete tip.dataset.map; }
   }
 });
 canvas.addEventListener("pointerup", e => {
@@ -495,7 +566,9 @@ canvas.addEventListener("contextmenu", e => {
   e.preventDefault();
   if (!game) return;
   if (view.buildMode) { setBuildMode(null); return; }
-  moveSelected(view.provAt(e.clientX, e.clientY));
+  const p = view.provAt(e.clientX, e.clientY);
+  const ctr = view.countersAt(e.clientX, e.clientY);
+  if (p && view.selected.size) orderWithDiplomacy(p, ctr && ctr.tag !== player ? ctr.tag : null);
 });
 canvas.addEventListener("wheel", e => { e.preventDefault(); view.zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
 
@@ -518,9 +591,9 @@ function handleClick(x, y, shift, ptype) {
   }
   const p = view.provAt(x, y);
   if (view.selected.size && !shift) {
-    if (p) { if (moveSelected(p)) { view.selected.clear(); $("info").classList.add("hidden"); view.selProv = null; } }
-    else { view.selected.clear(); $("info").classList.add("hidden"); }
-    view.dirty = true; return;
+    if (!p) { view.selected.clear(); $("info").classList.add("hidden"); view.dirty = true; return; }
+    orderWithDiplomacy(p, ctr && ctr.tag !== player ? ctr.tag : null);
+    return;
   }
   if (!shift) view.selected.clear();
   view.selProv = p;

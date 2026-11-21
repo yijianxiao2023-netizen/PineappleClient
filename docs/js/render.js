@@ -306,11 +306,11 @@ export class MapView {
       const [cx, cy] = this.toScreen(p.c[0], p.c[1]);
       if (cx < -80 || cy < -60 || cx > this.vw + 80 || cy > this.vh + 60) continue;
       list.sort((a, b) => rank(a.tag) - rank(b.tag) || a.tag.localeCompare(b.tag) || UNIT_ORDER.indexOf(a.type) - UNIT_ORDER.indexOf(b.type));
-      const perRow = 3, W = this.counterW(), H = 22;
+      const perRow = 3, W = this.counterW(), H = 22, GAP = 8;
       const rows = Math.ceil(list.length / perRow);
       list.forEach((gp, i) => {
         const r = Math.floor(i / perRow), col = i % perRow, inRow = Math.min(perRow, list.length - r * perRow);
-        const x = cx - (inRow * (W + 2)) / 2 + col * (W + 2), y = cy + 6 + r * (H + 2) - (rows > 2 ? (rows - 2) * (H + 2) / 2 : 0);
+        const x = cx - (inRow * (W + 2)) / 2 + col * (W + 2), y = cy + 6 + r * (H + GAP) - (rows > 2 ? (rows - 2) * (H + GAP) / 2 : 0);
         this.drawCounter(gp, x, y, W, H);
       });
     }
@@ -353,12 +353,12 @@ export class MapView {
     ctx.strokeRect(x, y, w, h);
     const str = gp.ds.reduce((a, d) => a + d.str, 0) / gp.ds.length;
     const org = gp.ds.reduce((a, d) => a + d.org, 0) / gp.ds.length;
-    ctx.fillStyle = "#111"; ctx.fillRect(x, y + h, w, u.domain === "land" ? 4 : 2);
-    ctx.fillStyle = "#5ed06a"; ctx.fillRect(x, y + h, w * Math.max(0, str), 2);
-    if (u.domain === "land") { ctx.fillStyle = "#e8c24a"; ctx.fillRect(x, y + h + 2, w * Math.max(0, org), 2); }
+    ctx.fillStyle = "#111"; ctx.fillRect(x, y + h, w, u.domain === "land" ? 6 : 4);
+    ctx.fillStyle = str > 0.6 ? "#5ed06a" : str > 0.3 ? "#e3b83c" : "#e0533f"; ctx.fillRect(x, y + h, w * Math.max(0, str), 4);
+    if (u.domain === "land") { ctx.fillStyle = "#9fc3ff"; ctx.fillRect(x, y + h + 4, w * Math.max(0, org), 2); }
     if (u.domain === "air" && gp.ds.some(d => d.mission != null && g.hourCount - d.mission < 2)) { ctx.fillStyle = "#ff6a4a"; ctx.beginPath(); ctx.arc(x + w - 4, y + 4, 3, 0, Math.PI * 2); ctx.fill(); }
     ctx.globalAlpha = 1;
-    this.counterRects.push({ x, y, w, h: h + 4, tag: gp.tag, prov: gp.prov, type: gp.type, ids: gp.ds.map(d => d.id) });
+    this.counterRects.push({ x, y, w, h: h + 6, tag: gp.tag, prov: gp.prov, type: gp.type, ids: gp.ds.map(d => d.id) });
   }
 
   drawBattles() {

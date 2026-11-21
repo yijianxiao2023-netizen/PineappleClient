@@ -47,7 +47,7 @@ export class Game {
       };
     }
     for (const p of this.P) {
-      p.ctrl = p.owner; p.civ = 0; p.mil = 0; p.fort = 0; p.divs = new Set(); p.air = new Set(); p.ships = new Set();
+      p.ctrl = p.owner; p.core = p.owner; p.civ = 0; p.mil = 0; p.fort = 0; p.divs = new Set(); p.air = new Set(); p.ships = new Set();
       p.slots = Math.max(1, 1 + Math.floor(p.vp / 5)) + (p.terrain === "plains" ? 1 : 0) - (p.terrain === "desert" ? 1 : 0);
       if (p.slots < 0) p.slots = 0;
       if (p.capital && this.countries[p.capital]) this.countries[p.capital].capital = p.id;
@@ -200,16 +200,16 @@ export class Game {
     for (const p of this.P) {
       const c = this.countries[p.ctrl];
       if (c) {
-        const owned = p.owner === p.ctrl;
-        const f = owned ? (p.home ? 1 : 0.8) : 0.6;
-        const land = owned ? 1 : 0.6;
+        const owned = p.core === p.ctrl;
+        const f = owned ? (p.home ? 1 : 0.8) : 0.75;
+        const land = owned ? 1 : 0.8;
         c.civEff += p.civ * f + 0.08 * land; c.milEff += p.mil * f + 0.06 * land;
         c.mpBase += (p.pop || 0) * (owned && p.home ? 1 : 0.15);
         c.income += (0.5 + 0.3 * p.vp) * land;
         c.provCount++;
       }
-      const o = this.countries[p.owner];
-      if (o) { const w = (1 + p.vp) * (p.home ? 1 : 0.15); o.vpOwned += w; if (p.ctrl !== p.owner && this.atWar(p.ctrl, p.owner)) o.vpLost += w; }
+      const o = this.countries[p.core];
+      if (o) { const w = (1 + p.vp) * (p.home ? 1 : 0.15); o.vpOwned += w; if (p.ctrl !== p.core && this.atWar(p.ctrl, p.core)) o.vpLost += w; }
     }
   }
 
@@ -330,10 +330,11 @@ export class Game {
 
   capture(p, tag) {
     if (p.ctrl === tag) return;
-    const prevCtrl = p.ctrl;
     let newCtrl = tag;
-    if (p.owner !== prevCtrl && this.friendly(tag, p.owner) && this.countries[p.owner].alive) newCtrl = p.owner;
-    p.ctrl = newCtrl;
+    if (p.core !== tag && this.friendly(tag, p.core) && this.countries[p.core]?.alive) newCtrl = p.core;
+    const prev = p.owner;
+    p.ctrl = newCtrl; p.owner = newCtrl;
+    if (newCtrl === this.player || prev === this.player) this.log(newCtrl === this.player ? `You took ${p.name} from ${this.countries[prev]?.name || prev}.` : `${this.countries[newCtrl].name} took ${p.name} from you!`, newCtrl === this.player ? "army" : "war", [newCtrl, prev]);
     this.mapVersion++;
     for (const id of [...p.divs]) { const d = this.divs.get(id); if (d && this.atWar(d.tag, tag)) this.retreatOrDestroy(d, tag); }
     for (const id of [...p.air, ...p.ships]) { const d = this.divs.get(id); if (d && !this.friendly(d.tag, newCtrl)) this.rebase(d); }
@@ -699,7 +700,7 @@ export class Game {
 
   transferProvince(p, tag) {
     for (const id of [...p.divs]) { const d = this.divs.get(id); if (d && d.tag !== tag) { const cap = this.P[this.countries[d.tag].capital]; if (cap && cap.ctrl === d.tag) this.moveDivTo(d, cap.id); else this.removeDiv(d); } }
-    p.owner = tag; p.ctrl = tag;
+    p.owner = tag; p.ctrl = tag; p.core = tag;
     for (const id of [...p.air, ...p.ships]) { const d = this.divs.get(id); if (d && !this.friendly(d.tag, tag)) this.rebase(d); }
     this.mapVersion++;
   }
@@ -707,8 +708,8 @@ export class Game {
   annex(tag, target, peaceful) {
     const t = this.countries[target];
     if (!t.alive) return;
-    for (const p of this.P) if (p.owner === target) { p.owner = tag; p.ctrl = tag; }
-    for (const p of this.P) if (p.ctrl === target) p.ctrl = p.owner;
+    for (const p of this.P) if (p.owner === target) { p.owner = tag; p.ctrl = tag; p.core = tag; }
+    for (const p of this.P) if (p.core === target) p.core = p.owner;
     for (const d of [...this.divs.values()]) if (d.tag === target) { if (peaceful) { d.tag = tag; d.path = []; } else this.removeDiv(d); }
     this.killCountry(t);
     this.log(peaceful ? `${this.countries[tag].name} annexed ${t.name}.` : `${t.name} has capitulated to ${this.countries[tag].name}.`, "major", [tag, target]);
@@ -733,9 +734,8 @@ export class Game {
 
   cleanupAfterPeace() {
     for (const p of this.P) {
-      if (p.ctrl !== p.owner && !this.atWar(p.ctrl, p.owner)) {
-        if (!this.countries[p.owner].alive) p.owner = p.ctrl; else p.ctrl = p.owner;
-      }
+      if (!this.countries[p.core]?.alive) p.core = p.owner;
+      else if (p.owner !== p.core && this.relation(p.owner, p.core) === "ally") { p.owner = p.core; p.ctrl = p.core; }
     }
     for (const d of [...this.divs.values()]) {
       const p = this.P[d.prov];
@@ -764,26 +764,68 @@ export class Game {
 
   capitulate(c) {
     const weight = {};
-    for (const p of this.P) if (p.owner === c.tag && p.ctrl !== c.tag && this.atWar(p.ctrl, c.tag)) weight[p.ctrl] = (weight[p.ctrl] || 0) + (1 + p.vp) * (p.home ? 1 : 0.15);
+    for (const p of this.P) if (p.core === c.tag && p.ctrl !== c.tag && this.atWar(p.ctrl, c.tag)) weight[p.ctrl] = (weight[p.ctrl] || 0) + (1 + p.vp) * (p.home ? 1 : 0.15);
     const enemies = this.enemiesOf(c.tag).filter(t => this.countries[t].alive);
-    let conqueror = Object.entries(weight).sort((a, b) => b[1] - a[1])[0]?.[0] || enemies[0];
+    const conqueror = Object.entries(weight).sort((a, b) => b[1] - a[1])[0]?.[0] || enemies[0];
     if (!conqueror) return;
     for (const p of this.P) {
-      if (p.owner !== c.tag) continue;
-      if (p.ctrl !== c.tag && this.atWar(p.ctrl, c.tag)) p.owner = p.ctrl;
-      else { p.owner = conqueror; p.ctrl = conqueror; }
+      if (p.owner === c.tag) {
+        const back = p.core !== c.tag && this.countries[p.core]?.alive ? p.core : conqueror;
+        p.owner = back; p.ctrl = back; p.core = back;
+      } else if (p.core === c.tag) p.core = p.owner;
     }
-    for (const p of this.P) if (p.ctrl === c.tag) p.ctrl = p.owner;
     for (const d of [...this.divs.values()]) if (d.tag === c.tag) this.removeDiv(d);
+    this.mapVersion++;
     this.log(`${c.name} has capitulated! Its lands are taken by ${this.countries[conqueror].name}.`, "major", [c.tag, conqueror]);
     this.killCountry(c);
     if (this.player && this.countries[this.player].alive) {
       const pf = this.factionOf(this.player);
-      const enemiesLeft = this.enemiesOf(this.player).length;
-      if (!enemiesLeft && this.alive().every(x => x.tag === this.player || this.friendly(this.player, x.tag) || !x.major)) {
+      if (!this.enemiesOf(this.player).length && this.alive().every(x => x.tag === this.player || this.friendly(this.player, x.tag) || !x.major)) {
         this.gameOver = { win: true, text: `${this.countries[this.player].name}${pf ? " and the " + pf.name : ""} dominate Europe!` };
       }
     }
+  }
+
+  forceWar(tag, target) {
+    if (this.atWar(tag, target) || this.friendly(tag, target) || !this.countries[target].alive) return false;
+    this.countries[tag].wargoals[target] = this.time + DAY;
+    return this.declareWar(tag, target);
+  }
+
+  rivalFaction(of) {
+    const live = this.factions.filter(f => f !== of && f.members.size && this.countries[f.leader]?.alive);
+    if (of) {
+      const atWar = live.filter(f => [...f.members].some(m => [...of.members].some(e => this.atWar(m, e))));
+      if (atWar.length) return atWar.sort((a, b) => this.factionStrength(b) - this.factionStrength(a))[0];
+      const pref = { allies: "axis", axis: "allies", comintern: "axis" }[of.id];
+      const p = live.find(f => f.id === pref);
+      if (p) return p;
+    }
+    return live.sort((a, b) => this.factionStrength(b) - this.factionStrength(a))[0] || null;
+  }
+  factionStrength(f) { let s = 0; for (const m of f.members) s += this.strength(m); return s; }
+
+  betray(tag, target) {
+    const c = this.countries[tag];
+    const old = this.factionOf(tag);
+    const victimF = this.factionOf(target);
+    const oldName = old ? old.name : "your allies";
+    if (old) {
+      old.members.delete(tag);
+      if (old.leader === tag) old.leader = [...old.members].sort((a, b) => this.strength(b) - this.strength(a))[0] || null;
+    }
+    this.factions = this.factions.filter(f => f.members.size > 0);
+    for (const w of this.wars) { w.sides[0].delete(tag); w.sides[1].delete(tag); }
+    this.wars = this.wars.filter(w => w.sides[0].size && w.sides[1].size);
+    this.rebuildRelations();
+    const rival = this.rivalFaction(old || victimF);
+    if (rival) this.joinFaction(tag, rival.id); else this.createFaction(tag, `${c.adj} Pact`);
+    this.log(`${c.name} has betrayed the ${oldName} and joined the ${this.factionOf(tag).name}!`, "major", [tag, target]);
+    if (!this.atWar(tag, target)) { c.wargoals[target] = this.time + DAY; this.declareWar(tag, target); }
+    if (old) for (const m of [...old.members]) if (!this.atWar(tag, m) && this.countries[m].alive) { c.wargoals[m] = this.time + DAY; this.declareWar(tag, m); }
+    for (const p of this.P) if (p.owner !== p.core && this.countries[p.core]?.alive && this.relation(p.owner, p.core) === "ally") { p.owner = p.core; p.ctrl = p.core; }
+    this.mapVersion++;
+    return true;
   }
 
   joinFaction(tag, factionId) {
