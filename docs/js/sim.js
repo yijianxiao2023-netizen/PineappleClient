@@ -1,6 +1,6 @@
-import { START_DATE, COUNTRIES, FACTIONS, TERRAIN, UNIT, BUILD, TECHS, GENERIC_FOCUS, NATIONAL_FOCUS, AIR_RANGE, TIER_MULT, TIER_COST, ROMAN, INCOME_SCALE, COST_SCALE, WAR_TAX } from "./data.js?v=1795221651";
+import { START_DATE, COUNTRIES, FACTIONS, TERRAIN, UNIT, BUILD, TECHS, GENERIC_FOCUS, NATIONAL_FOCUS, AIR_RANGE, TIER_MULT, TIER_COST, ROMAN, INCOME_SCALE, COST_SCALE, WAR_TAX } from "./data.js?v=1795222517";
 
-import { installDiplomacy } from "./diplo.js?v=1795221651";
+import { installDiplomacy } from "./diplo.js?v=1795222517";
 const DAY = 86400000;
 const HOUR = 3600000;
 const TECH = Object.fromEntries(TECHS.map(t => [t.id, t]));
@@ -71,6 +71,7 @@ export class Game {
       const tot = own.reduce((s, p) => s + (1 + p.vp) * (p.home ? 1 : 0.2), 0) || 1;
       for (const p of own) p.pop = c.pop * (1 + p.vp) * (p.home ? 1 : 0.2) / tot;
     }
+    this.rebuildRelations();
     for (const c of Object.values(this.countries)) {
       if (c.capital < 0) c.capital = this.ownedProvs(c.tag).sort((a, b) => b.vp - a.vp)[0]?.id ?? -1;
       this.recomputeMods(c);
@@ -129,10 +130,15 @@ export class Game {
     const home = this.homeComponent(c.tag);
     if (!home.length) return;
     const border = home.filter(p => p.adj.some(n => this.P[n].owner !== c.tag));
-    const spots = border.length ? border : home;
-    for (let i = 0; i < c.divs; i++) {
-      const p = i % 5 === 4 || !spots.length ? this.P[c.capital] || home[0] : spots[Math.floor(this.rng() * spots.length)];
-      this.spawnDiv(c.tag, "inf", p.id, 1, 0.8);
+    const rest = home.filter(p => !border.includes(p));
+    const cap = this.P[c.capital];
+    const order = [...(cap ? [cap] : []), ...border.sort(() => this.rng() - 0.5), ...rest.sort(() => this.rng() - 0.5)];
+    const used = new Set();
+    let placed = 0;
+    for (const p of order) {
+      if (placed >= c.divs) break;
+      if (used.has(p.id) || p.divs.size) continue;
+      used.add(p.id); this.spawnDiv(c.tag, "inf", p.id, 1, 0.8); placed++;
     }
   }
 
@@ -140,8 +146,8 @@ export class Game {
     const cap = this.P[c.capital];
     if (!cap) return;
     const F = { GER: [4, 2], ENG: [3, 1], FRA: [3, 1], ITA: [3, 1], SOV: [4, 1] }[c.tag] || [c.civ >= 5 ? 1 : 0, 0];
-    for (let i = 0; i < F[0]; i++) this.spawnDiv(c.tag, "ftr", cap.id, 1, 1);
-    for (let i = 0; i < F[1]; i++) this.spawnDiv(c.tag, "bmb", cap.id, 1, 1);
+    for (let i = 0; i < F[0]; i++) { const t = this.spawnTile(c.tag, "air"); if (t) this.spawnDiv(c.tag, "ftr", t.id, 1, 1); }
+    for (let i = 0; i < F[1]; i++) { const t = this.spawnTile(c.tag, "air"); if (t) this.spawnDiv(c.tag, "bmb", t.id, 1, 1); }
     this.spawnShips(c, Math.round(c.navy / 10));
   }
 
@@ -150,8 +156,102 @@ export class Game {
     const cap = this.P[c.capital];
     const ports = this.P.filter(p => p.coastal && p.owner === c.tag && p.ctrl === c.tag).sort((a, b) => (b.vp - a.vp) || (cap ? Math.hypot(a.c[0] - cap.c[0], a.c[1] - cap.c[1]) - Math.hypot(b.c[0] - cap.c[0], b.c[1] - cap.c[1]) : 0));
     if (!ports.length) return;
-    for (let i = 0; i < n; i++) this.spawnDiv(c.tag, "ship", ports[i % Math.min(3, ports.length)].id, 1, 1, tier);
+    for (let i = 0; i < n; i++) { const t = this.spawnTile(c.tag, "sea"); if (t) this.spawnDiv(c.tag, "ship", t.id, 1, 1, tier); }
   }
+
+  setOf(p, domain) { return domain === "air" ? p.air : domain === "sea" ? p.ships : p.divs; }
+  occupiedBy(pid, tag, domain = "land", except) {
+    for (const id of this.setOf(this.P[pid], domain)) { if (id === except) continue; const d = this.divs.get(id); if (d && this.friendly(tag, d.tag)) return d; }
+    return null;
+  }
+  reservedFor(tag, domain = "land", except) {
+    const r = new Set();
+    for (const d of this.divs.values()) if (d.domain === domain && d.id !== except && d.path.length && this.friendly(tag, d.tag)) r.add(d.path[d.path.length - 1].id);
+    return r;
+  }
+  isFree(pid, tag, domain = "land", reserved, except) { return !this.occupiedBy(pid, tag, domain, except) && !(reserved || this.reservedFor(tag, domain, except)).has(pid); }
+  spawnTile(tag, domain = "land") {
+    const c = this.countries[tag];
+    let start = this.P[c.capital];
+    if (!start || start.ctrl !== tag) start = this.P.find(p => p.ctrl === tag && p.owner === tag);
+    if (!start) return null;
+    const reserved = this.reservedFor(tag, domain);
+    const ok = p => p.ctrl === tag && p.owner === tag && (domain !== "sea" || p.coastal) && this.isFree(p.id, tag, domain, reserved);
+    const seen = new Set([start.id]), q = [start.id];
+    while (q.length) {
+      const id = q.shift(), p = this.P[id];
+      if (ok(p)) return p;
+      for (const n of p.adj) if (!seen.has(n) && this.P[n].ctrl === tag) { seen.add(n); q.push(n); }
+    }
+    return this.P.find(ok) || null;
+  }
+  freeSpawnCount(tag, domain = "land") {
+    const reserved = this.reservedFor(tag, domain);
+    let n = 0;
+    for (const p of this.P) if (p.ctrl === tag && p.owner === tag && (domain !== "sea" || p.coastal) && this.isFree(p.id, tag, domain, reserved)) n++;
+    return n - this.countries[tag].training.filter(t => UNIT[t.type].domain === domain).length;
+  }
+  freeTilesNear(tag, startId, domain = "land", max = 20, except) {
+    const reserved = this.reservedFor(tag, domain, except);
+    const out = [];
+    const seen = new Set([startId]), q = [startId];
+    while (q.length && out.length < max) {
+      const id = q.shift(), p = this.P[id];
+      if (this.friendly(tag, p.ctrl) && (domain !== "sea" || p.coastal) && this.isFree(id, tag, domain, reserved, except)) out.push(p);
+      for (const n of (domain === "land" ? p.adj : [...p.adj, ...p.sea])) if (!seen.has(n) && this.relation(tag, this.P[n].ctrl) !== "neutral") { seen.add(n); q.push(n); }
+      if (seen.size > 400) break;
+    }
+    return out;
+  }
+
+  orderGroup(ids, target) {
+    const units = ids.map(i => this.divs.get(i)).filter(Boolean);
+    let ok = 0;
+    const tp = this.P[target];
+    const dist = (d) => Math.hypot(this.P[d.prov].c[0] - tp.c[0], this.P[d.prov].c[1] - tp.c[1]);
+    for (const domain of ["land", "air", "sea"]) {
+      const us = units.filter(d => d.domain === domain).sort((a, b) => dist(a) - dist(b));
+      if (!us.length) continue;
+      const tag = us[0].tag;
+      const mine = new Set(us.map(d => d.id));
+      for (const d of us) { d.path = []; d.attacking = null; d.prog = 0; }
+      const reserved = this.reservedFor(tag, domain);
+      const freeFor = q => [...this.setOf(q, domain)].every(i => mine.has(i) || !this.friendly(tag, this.divs.get(i)?.tag)) && !reserved.has(q.id);
+      const hostile = domain === "land" && (this.atWar(tag, tp.ctrl) || [...tp.divs].some(i => { const e = this.divs.get(i); return e && this.atWar(tag, e.tag); }));
+      if (hostile) {
+        const used = new Set();
+        const staging = tp.adj.map(n => this.P[n]).filter(q => this.friendly(tag, q.ctrl) && freeFor(q));
+        for (const d of us) {
+          if (tp.adj.includes(d.prov) && !used.has(d.prov)) { const path = this.computePath(d, target); if (path) { d.path = path; used.add(d.prov); ok++; continue; } }
+          const slot = staging.find(q => !used.has(q.id));
+          if (!slot) continue;
+          const toSlot = this.computePath(d, slot.id);
+          if (!toSlot) continue;
+          used.add(slot.id); d.path = [...toSlot, { id: target, sea: false }]; ok++;
+        }
+        continue;
+      }
+      const slots = [];
+      const seen = new Set([target]), q = [target];
+      while (q.length && slots.length < us.length + 4 && seen.size < 500) {
+        const id = q.shift(), p = this.P[id];
+        if (this.friendly(tag, p.ctrl) && (domain !== "sea" || p.coastal) && freeFor(p)) slots.push(p);
+        for (const n of (domain === "land" ? p.adj : [...p.adj, ...p.sea])) if (!seen.has(n) && this.relation(tag, this.P[n].ctrl) !== "neutral") { seen.add(n); q.push(n); }
+      }
+      const used = new Set();
+      for (const d of us) {
+        for (const slot of slots) {
+          if (used.has(slot.id)) continue;
+          if (slot.id === d.prov) { used.add(slot.id); ok++; break; }
+          const path = this.computePath(d, slot.id);
+          if (!path) continue;
+          used.add(slot.id); d.path = path; ok++; break;
+        }
+      }
+    }
+    return ok;
+  }
+
 
   setFor(p, d) { return d.domain === "air" ? p.air : d.domain === "sea" ? p.ships : p.divs; }
   tierOf(tag, type) {
@@ -261,6 +361,7 @@ export class Game {
     let h = UNIT[d.type].hours * TERRAIN[b.terrain].move * clamp(dist / 38, 0.6, 3.2);
     if (viaSea) h *= 3;
     if (this.atWar(d.tag, b.ctrl)) h *= 1.5;
+    if (this.atWar(d.tag, b.ctrl) && this.countries[b.core]?.capital === b.id && b.ctrl === b.core) h *= 3;
     if (this.isWinter(b) && d.tag !== "SOV" && d.tag !== "FIN") h *= 1.3;
     return h / (1 + this.mod(d.tag, "speed"));
   }
@@ -356,6 +457,7 @@ export class Game {
         if (sp) { d.path = sp; d.prog = 0; ok++; }
         continue;
       }
+      if (this.occupiedBy(target, d.tag, "land", d.id) && !this.atWar(d.tag, this.P[target].ctrl)) continue;
       const path = this.computePath(d, target);
       if (path) { d.path = path; d.prog = 0; d.attacking = null; ok++; }
     }
@@ -367,7 +469,9 @@ export class Game {
     let newCtrl = tag;
     if (p.core !== tag && this.friendly(tag, p.core) && this.countries[p.core]?.alive) newCtrl = p.core;
     const prev = p.owner;
+    const capOf = Object.values(this.countries).find(c => c.alive && c.capital === p.id && c.tag === p.core && c.tag !== newCtrl && this.atWar(c.tag, newCtrl));
     p.ctrl = newCtrl; p.owner = newCtrl;
+    if (capOf) { this.mapVersion++; this.capitalFall(capOf, newCtrl); return; }
     if (newCtrl === this.player || prev === this.player) this.log(newCtrl === this.player ? `You took ${p.name} from ${this.countries[prev]?.name || prev}.` : `${this.countries[newCtrl].name} took ${p.name} from you!`, newCtrl === this.player ? "army" : "war", [newCtrl, prev]);
     this.mapVersion++;
     for (const id of [...p.divs]) { const d = this.divs.get(id); if (d && this.atWar(d.tag, tag)) this.retreatOrDestroy(d, tag); }
@@ -400,7 +504,7 @@ export class Game {
     if (p.coastal) for (const d of this.shipList) {
       if (!this.friendly(tag, d.tag)) continue;
       const q = this.P[d.prov];
-      if (Math.hypot(q.c[0] - p.c[0], q.c[1] - p.c[1]) <= 90) S += d.str * this.tm(d);
+      if (Math.hypot(q.c[0] - p.c[0], q.c[1] - p.c[1]) <= 90) S += d.str * this.tm(d) * (1 + this.mod(d.tag, "naval"));
     }
     return { F, B, S, list };
   }
@@ -466,6 +570,12 @@ export class Game {
         continue;
       }
       d.attacking = null;
+      if (d.path.length === 1 && this.occupiedBy(next.id, d.tag, "land", d.id)) {
+        const alt = this.freeTilesNear(d.tag, next.id, "land", 1, d.id)[0];
+        const np = alt ? this.computePath(d, alt.id) : null;
+        if (np && np.length) { d.path = np; d.prog = 0; } else { d.path = []; d.prog = 0; }
+        continue;
+      }
       d.prog += 1;
       d.entrench = 0;
       if (d.prog >= this.legHours(d, d.prov, next.id, step.sea)) {
@@ -514,7 +624,7 @@ export class Game {
     };
     const defPow = d => {
       const u = UNIT[d.type];
-      return multD * u.def * this.tm(d) * (1 + this.mod(d.tag, u.armor ? "armDef" : "infDef")) * terr.def * (1 + 0.15 * p.fort) * (1 + 0.25 * d.entrench * (1 + this.mod(d.tag, "entrench"))) * d.str * (0.3 + 0.7 * d.org);
+      return multD * u.def * this.tm(d) * (1 + this.mod(d.tag, u.armor ? "armDef" : "infDef")) * terr.def * (1 + 0.15 * p.fort) * (this.countries[p.core]?.capital === p.id && p.ctrl === p.core ? 2 : 1) * (1 + 0.25 * d.entrench * (1 + this.mod(d.tag, "entrench"))) * d.str * (0.3 + 0.7 * d.org);
     };
     const top = (arr, f) => arr.map(f).sort((a, b) => b - a).slice(0, 12).reduce((s, v, i) => s + v * (i < 8 ? 1 : 0.5), 0);
     const A = top(atts, attPow), D = top(defs, defPow);
@@ -534,7 +644,14 @@ export class Game {
     }
     const remaining = [...p.divs].some(i => { const e = this.divs.get(i); return e && atts.some(a => this.atWar(a.tag, e.tag)); });
     if (!remaining) {
-      for (const a of atts) if (this.divs.has(a.id) && a.path.length) { a.attacking = null; a.prog = this.legHours(a, a.prov, p.id, a.sea) * 0.75; }
+      let first = true;
+      for (const a of [...atts].sort((x, y) => y.str * y.org - x.str * x.org)) {
+        if (!this.divs.has(a.id) || !a.path.length) continue;
+        a.attacking = null;
+        if (first && a.path.length === 1) { a.prog = this.legHours(a, a.prov, p.id, a.sea) * 0.75; first = false; }
+        else if (a.path.length === 1) { a.path = []; }
+        else a.prog = this.legHours(a, a.prov, p.id, a.sea) * 0.75;
+      }
     }
   }
 
@@ -543,6 +660,7 @@ export class Game {
     this.computeSupply();
     for (const c of this.alive()) this.dailyCountry(c);
     this.navalCombat();
+    this.unstack();
     for (const d of [...this.divs.values()]) {
       const c = this.countries[d.tag];
       if (d.domain === "land" && !c.supplied.has(d.prov)) { d.str -= 0.006 * (c.mods.supply ? 0.5 : 1); if (d.str <= 0.05) { c.losses++; this.removeDiv(d); } }
@@ -551,6 +669,32 @@ export class Game {
     if (this.ai) for (const c of this.alive()) if (c.tag !== this.player) this.ai(this, c);
     const d = new Date(this.time);
     if (d.getUTCDate() === 1) this.log(`${dateStr(this.time)}`, "date");
+  }
+
+  unstack() {
+    for (const p of this.P) {
+      for (const domain of ["land", "air", "sea"]) {
+        const set = this.setOf(p, domain);
+        if (set.size < 2) continue;
+        const us = [...set].map(i => this.divs.get(i)).filter(d => d && !d.path.length && d.attacking == null);
+        if (us.length < 2 && set.size - us.length < 1) continue;
+        const keep = set.size - us.length > 0 ? 0 : 1;
+        for (const d of us.slice(keep)) {
+          const t = this.freeTilesNear(d.tag, p.id, domain, 1, d.id).find(q => q.id !== p.id) || (domain === "land" ? null : this.spawnTile(d.tag, domain));
+          if (!t) {
+            if (domain !== "land") continue;
+            if (this.divsOf(d.tag).length <= this.P.filter(q => q.ctrl === d.tag).length) continue;
+            const c = this.countries[d.tag];
+            c.manpower += UNIT[d.type].mp * d.str * 0.5;
+            this.removeDiv(d);
+            if (d.tag === this.player) this.log(`No free tile for your ${UNIT[d.type].name} near ${p.name}: it was disbanded and half its soldiers returned to your manpower.`, "army", [d.tag]);
+            continue;
+          }
+          const path = this.computePath(d, t.id);
+          if (path) { d.path = path; d.prog = 0; }
+        }
+      }
+    }
   }
 
   navalCombat() {
@@ -562,7 +706,7 @@ export class Game {
       for (const t of ships) {
         const b = this.P[t.prov];
         if (Math.hypot(a.c[0] - b.c[0], a.c[1] - b.c[1]) > 90) continue;
-        if (this.atWar(s.tag, t.tag)) E += t.str * this.tm(t); else if (this.friendly(s.tag, t.tag)) O += t.str * this.tm(t);
+        const w = t.str * this.tm(t) * (1 + this.mod(t.tag, "naval")); if (this.atWar(s.tag, t.tag)) E += w; else if (this.friendly(s.tag, t.tag)) O += w;
       }
       if (E > 0) hits.set(s, 0.07 * E / (O + E) * (0.8 + this.rng() * 0.4));
     }
@@ -626,8 +770,8 @@ export class Game {
     c.training = c.training.filter(t => t.days > 0);
     for (const t of ready) {
       if (UNIT[t.type].domain === "sea") { this.spawnShips(c, 1, t.tier); if (c.tag === this.player) this.log("A new battle fleet has been launched.", "army", [c.tag]); continue; }
-      let at = this.P[c.capital];
-      if (!at || at.ctrl !== c.tag) at = this.controlledProvs(c.tag).sort((a, b) => b.vp - a.vp)[0];
+      const at = this.spawnTile(c.tag, UNIT[t.type].domain);
+      if (!at) { t.days = 1; c.training.push(t); continue; }
       if (at) { this.spawnDiv(c.tag, t.type, at.id, 1, 0.5, t.tier); if (c.tag === this.player) this.log(`New ${UNIT[t.type].name.toLowerCase()} ${UNIT[t.type].domain === "air" ? "wing" : "division"} ready in ${at.name}.`, "army", [c.tag]); }
     }
 
@@ -833,6 +977,25 @@ export class Game {
     }
   }
 
+  capitalFall(c, conqueror) {
+    const K = this.countries[conqueror];
+    let n = 0;
+    for (const p of this.P) {
+      if (p.owner === c.tag || (p.core === c.tag && p.owner !== conqueror && !this.countries[p.owner]?.alive)) { p.owner = conqueror; p.ctrl = conqueror; p.core = conqueror; n++; }
+      else if (p.core === c.tag) p.core = p.owner;
+    }
+    const capital = this.P[c.capital];
+    if (capital) { capital.owner = conqueror; capital.ctrl = conqueror; capital.core = conqueror; }
+    let lost = 0;
+    for (const d of [...this.divs.values()]) if (d.tag === c.tag) { this.removeDiv(d); lost++; }
+    this.mapVersion++;
+    this.log(`${K.name} captured ${capital ? capital.name : "the capital"}! ${c.name} has fallen: all ${n + 1} of its provinces now belong to ${K.name}, and its ${lost} units have been disbanded.`, "major", [conqueror, c.tag]);
+    this.killCountry(c);
+    for (const d of [...this.divs.values()]) { const q = this.P[d.prov]; if (!this.friendly(d.tag, q.ctrl) && d.domain === "land" && d.tag !== conqueror && !this.atWar(d.tag, q.ctrl)) { const cap = this.P[this.countries[d.tag].capital]; if (cap && cap.ctrl === d.tag) this.moveDivTo(d, cap.id); } }
+    this.updateEconomyCache(); this.computeSupply();
+    if (this.player && conqueror === this.player) this.log(`You now own all of ${c.name}'s land, factories and income.`, "army", [conqueror]);
+  }
+
   forceWar(tag, target) {
     if (this.atWar(tag, target) || this.friendly(tag, target) || !this.countries[target].alive) return false;
     const c = this.countries[tag];
@@ -968,6 +1131,7 @@ export class Game {
     const c = this.countries[tag], u = UNIT[type];
     if (u.req && !c.techs.has(u.req)) return `Research ${TECHS.find(t => t.id === u.req).name}`;
     if (u.domain === "sea" && !this.P.some(p => p.coastal && p.owner === tag && p.ctrl === tag)) return "No coastline";
+    if (this.freeSpawnCount(tag, u.domain) <= 0) return u.domain === "sea" ? "No free coastal tile for a new fleet" : `No free tile on your land for a new ${u.domain === "air" ? "air wing" : "unit"}`;
     const k = this.unitCost(tag, type);
     if (c.money < k.money) return `Need $${k.money}`;
     if (c.eqInf < k.eq) return `Need ${k.eq} equipment`;

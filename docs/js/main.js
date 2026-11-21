@@ -1,7 +1,7 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795221651";
-import { Game, dateStr } from "./sim.js?v=1795221651";
-import { runAI, aiAcceptsFaction } from "./ai.js?v=1795221651";
-import { MapView, drawUnitIcon } from "./render.js?v=1795221651";
+import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795222517";
+import { Game, dateStr } from "./sim.js?v=1795222517";
+import { runAI, aiAcceptsFaction } from "./ai.js?v=1795222517";
+import { MapView, drawUnitIcon } from "./render.js?v=1795222517";
 
 const $ = id => document.getElementById(id);
 const SPEEDS = [0, 2, 4, 8, 20, 60];
@@ -32,7 +32,7 @@ let battleLog = [], unread = 0, logFilter = "all", endShown = false, acc = 0, la
 const canvas = $("map");
 
 async function boot() {
-  const res = await fetch("data/map.json?v=1795221651");
+  const res = await fetch("data/map.json?v=1795222517");
   MAP = await res.json();
   const preview = new Game(MAP, { seed: 1 });
   view = new MapView(canvas, preview);
@@ -68,9 +68,9 @@ function buildStart() {
 
 function startGame(tag) {
   player = tag;
-  game = new Game(MAP, { player: tag });
+  game = new Game(MAP, { player: tag }); window.__game = game;
   game.ai = runAI;
-  view = new MapView(canvas, game);
+  view = new MapView(canvas, game); window.__game = game; window.__view = view;
   const cap = game.P[game.c(tag).capital];
   view.focusOn(cap.c[0], cap.c[1], 1.5);
   $("start").classList.add("hidden");
@@ -293,20 +293,21 @@ function renderArmy() {
   return `
   <div class="sec"><h4>Forces</h4><div class="kv">
     <span class="k">Land divisions</span><span>${land.length} · average strength ${Math.round(avgStr * 100)}%</span>
+    <span class="k">Free tiles</span><span>${Math.max(0, game.freeSpawnCount(player, "land"))} for land units · ${Math.max(0, game.freeSpawnCount(player, "air"))} for air · ${Math.max(0, game.freeSpawnCount(player, "sea"))} coastal for fleets <span class="muted">(1 unit per tile, so more land means more units)</span></span>
     <span class="k">Air wings</span><span>${count("ftr")} fighters, ${count("bmb")} bombers</span>
     <span class="k">Fleets</span><span>${count("ship")} (naval strength ${game.navyPower(player)} with allies)</span>
     <span class="k">Treasury</span><span>${money(c.money)} (upkeep −${money(c.upkeep || 0)}/day)</span>
     <span class="k">Manpower</span><span>${fmt(c.manpower * 1000)} (+${fmt((c.mpGain || 0) * 1000)}/day, research Housing for more)</span>
     <span class="k">Units destroyed / lost</span><span>${c.kills} / ${c.losses}</span>
   </div></div>
-  <div class="sec"><h4>Train units <small>Land units appear at your capital, fleets at your main port</small></h4>${cards}</div>
+  <div class="sec"><h4>Train units <small>New units appear on a free tile of your land, nearest your capital</small></h4>${cards}</div>
   <div class="sec"><h4>In training</h4>${train}</div>
   <div class="sec"><h4>Orders</h4><div class="grid2">
     <button class="btn" data-act="selall">Select all land units</button>
     <button class="btn" data-act="selidle">Select idle land units</button>
     <button class="btn" data-act="selair">Select all aircraft</button>
     <button class="btn" data-act="selships">Select all fleets</button>
-  </div><p class="muted" style="line-height:1.5">Click a counter to select it, or Shift-drag to box-select. Then hover over a destination and <b>left-click</b> to move or attack. Right-click cancels. Aircraft fly to any friendly province and support battles within the dashed circle. Fleets sail between friendly ports.</p></div>`;
+  </div><p class="muted" style="line-height:1.5">Click a counter to select it. Shift/Ctrl/⌘-click adds more, Shift-drag box-selects, <kbd>G</kbd> selects every land unit. Then hover over a destination and <b>left-click</b> to move or attack. Right-click cancels. Aircraft fly to any friendly province and support battles within the dashed circle. Fleets sail between friendly ports.</p></div>`;
 }
 
 function renderDiplomacy() {
@@ -346,7 +347,9 @@ function renderHelp() {
   <h4>Controls</h4><ul>
     <li><kbd>Space</kbd> steps the speed up: paused → 1 → 2 → 3 → 4 → 5 → paused again. <kbd>1</kbd>–<kbd>5</kbd> jump straight to a speed.</li>
     <li>Drag to pan, scroll to zoom. The arrow keys also pan.</li>
-    <li><b>Click your unit</b> (or anywhere in a province where you have units) to select it. Hover over where you want to go, then <b>left-click</b> to send it there. Right-click cancels. <kbd>Shift</kbd>-click adds more units, <kbd>Shift</kbd>-drag box-selects, and clicking the sea deselects.</li>
+    <li><b>Click your unit</b> (or anywhere in a province where you have units) to select it. Hover over where you want to go, then <b>left-click</b> to send it there. Right-click cancels. <kbd>Shift</kbd>, <kbd>Ctrl</kbd> or <kbd>⌘</kbd>-click adds (or removes) units, <kbd>Shift</kbd>-drag box-selects, <kbd>G</kbd> selects all your land units, and clicking the sea deselects.</li>
+    <li><b>Group attacks:</b> send several units at one enemy tile and each one takes a different neighboring tile, so they all hit it at once.</li>
+    <li><b>Capitals:</b> take a country's capital and the whole country becomes yours; its units are disbanded. Capitals defend at double strength and take three times as long to march into, so the AI (and you) have time to rush defenders there.</li>
     <li>You never have to click each province. Select a unit, <b>hover</b> over any destination to preview the fastest route (dashed arrows), then <b>left-click once</b> and it walks the whole way. Nothing moves until you click.</li>
     <li>Land units only walk over land. They cross the sea only when there is no land route at all (for example, Britain to France).</li>
     <li>Attacking a country you have no war goal against costs a <b>$10,000 war tax</b>. Betraying allies costs the same.</li>
@@ -356,6 +359,10 @@ function renderHelp() {
     ${UNIT_ORDER.map(t => `<li style="list-style:none;margin-left:-18px;display:flex;gap:8px;align-items:center">${icon(t, 22)}<span><b>${UNIT[t].name}</b>: ${esc(UNIT[t].desc)}</span></li>`).join("")}
     <li>Every counter shows the unit type icon, how many units are in it, and green (strength) and yellow (organization) bars. A white border means yours, blue means an ally, red means an enemy.</li>
     <li>Movement takes time. At speed 3, infantry needs about 5 seconds per province, tanks about 3, and aircraft and fleets about 1 to 2. Rough terrain is slower.</li></ul>
+  <h4>One unit per tile</h4><ul>
+    <li>Each tile can hold <b>one</b> land unit (plus one air wing and one fleet). Units can't stack.</li>
+    <li>New units appear on a free tile of your land, nearest your capital. You can only train when you have a free tile, so <b>more land means a bigger army</b>.</li>
+    <li>Send several units to one spot and they spread out onto the target and the free tiles around it. Send them at an enemy tile and they attack together from different neighboring tiles. Only one moves in when it's taken.</li></ul>
   <h4>Tiers, money &amp; manpower</h4><ul>
     <li>Every unit type has <b>tiers I to V</b>. Research the next tier (Infantry II, Light Tank III and so on) and new units train at that tier, from 100% up to 200% combat power. Upgrade older units from the Army panel.</li>
     <li>Each unit costs money to train <b>and upkeep every day</b>. Higher tiers cost more. If your treasury hits zero, your army loses organization.</li>
@@ -621,7 +628,8 @@ function updatePreview() {
     game.rebuildRelations();
     blocked = true;
   }
-  if (path && path.length) view.preview = { from: d.prov, to: view.hoverProv.id, path: path.map(s => s.id), attack: rel === "enemy" || blocked, war: blocked };
+  const occ = !blocked && rel !== "enemy" && game.occupiedBy(view.hoverProv.id, player, d.domain, d.id) && ![...view.selected].includes(game.occupiedBy(view.hoverProv.id, player, d.domain, d.id).id);
+  if (path && path.length) view.preview = { from: d.prov, to: view.hoverProv.id, path: path.map(s => s.id), attack: rel === "enemy" || blocked, war: blocked, occupied: !!occ, many: view.selected.size };
 }
 
 function finishOrder(p) {
@@ -663,7 +671,7 @@ function confirmBox(title, html, okLabel, cls, onOk) {
 
 function moveSelected(p) {
   if (!view.selected.size || !p) return 0;
-  const n = game.orderMove([...view.selected], p.id);
+  const n = game.orderGroup([...view.selected], p.id);
   if (!n) toast(view.selected.size && [...view.selected].every(i => game.divs.get(i)?.domain === "sea") ? "Fleets can only sail to friendly coastal provinces." : [...view.selected].every(i => game.divs.get(i)?.domain === "air") ? "Aircraft can only fly to friendly provinces." : "No route there. You can't enter neutral countries.");
   else if (game.atWar(player, p.ctrl)) toast(`${n} division${n > 1 ? "s" : ""} attacking ${p.name}`);
   view.dirty = true;
@@ -676,7 +684,7 @@ canvas.addEventListener("pointerdown", e => {
   canvas.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) }; down = null; return; }
-  down = { x: e.clientX, y: e.clientY, btn: e.button, shift: e.shiftKey, moved: false, ox: view.ox, oy: view.oy, type: e.pointerType };
+  down = { x: e.clientX, y: e.clientY, btn: e.button, shift: e.shiftKey || e.ctrlKey || e.metaKey, moved: false, ox: view.ox, oy: view.oy, type: e.pointerType };
   if (e.button === 0 && e.shiftKey && game) view.box = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY };
 });
 canvas.addEventListener("pointermove", e => {
@@ -746,6 +754,7 @@ function handleClick(x, y, shift, ptype) {
   const selProvs = new Set([...view.selected].map(i => game.divs.get(i)?.prov));
   if (ctr && ctr.tag === player && view.selected.size && !shift && !selProvs.has(ctr.prov)) { finishOrder(game.P[ctr.prov]); return; }
   if (ctr && ctr.tag === player) {
+    if (shift && ctr.ids.every(i => view.selected.has(i))) { for (const i of ctr.ids) view.selected.delete(i); view.dirty = true; if (view.selected.size) showDivInfo(); else $("info").classList.add("hidden"); return; }
     if (!shift) view.selected.clear();
     const now = performance.now();
     const ids = now - lastTap < 350 ? game.divsOf(player, UNIT[ctr.type].domain).filter(d => d.type === ctr.type && Math.hypot(game.P[d.prov].c[0] - game.P[ctr.prov].c[0], game.P[d.prov].c[1] - game.P[ctr.prov].c[1]) < 120).map(d => d.id) : ctr.ids;
@@ -778,6 +787,7 @@ addEventListener("keydown", e => {
   const k = e.key.toLowerCase();
   if (k === " ") { e.preventDefault(); setSpeed(speed >= 5 ? 0 : speed + 1); toast(speed ? `Speed ${speed}` : "Paused"); }
   else if ("12345".includes(k) && k.length === 1) setSpeed(+k);
+  else if (k === "g") { view.selected.clear(); for (const d of game.divsOf(player)) view.selected.add(d.id); view.dirty = true; if (view.selected.size) { showDivInfo(); toast(`Selected all ${view.selected.size} land units`); } }
   else if (k === "f") openTab(tab === "focus" ? null : "focus");
   else if (k === "r") openTab(tab === "research" ? null : "research");
   else if (k === "p") openTab(tab === "production" ? null : "production");

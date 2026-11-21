@@ -36,7 +36,8 @@ A grand strategy game of Europe on the eve of the Second World War, in the spiri
 | 1–5 | Jump to a speed |
 | Drag / scroll | Pan and zoom (arrow keys also pan) |
 | Click a counter, then click a province | Move or attack (right-click also works) |
-| Shift-click / Shift-drag | Add to selection / box-select |
+| Shift/Ctrl/⌘-click, Shift-drag | Add to selection / box-select |
+| G | Select all your land units |
 | F R P A D | Focus, Research, Industry, Army, Diplomacy |
 | B | Battle Log |
 | M | Political or faction map mode |
@@ -59,3 +60,11 @@ tools/build_map.mjs    builds map.json from Natural Earth data (npm install && n
 GitHub Pages serves the repo root, and `index.html` there forwards to `docs/`, where the game lives. If you switch **Settings → Pages → Source** to **GitHub Actions**, run the `Deploy game to GitHub Pages` workflow by hand to publish `docs/` directly.
 
 Map data: Natural Earth, via the `world-atlas` package.
+
+## One unit per tile, capitals and AI strategy
+
+- Each tile holds one land unit (plus one air wing and one fleet). New units appear on a free tile of your land, so you can only train while you have room.
+- Groups spread out around their destination; groups sent at an enemy tile attack it together from different sides.
+- Capturing a capital annexes the whole country and disbands its units. Capitals defend at double strength.
+- Each AI picks a strategy per match (Blitzkrieg, Broad Front, Defense in Depth, Encirclement, Attrition). Allies coordinate a joint offensive target, launch joint attacks, and send help when an ally's capital is threatened.
+- Research now includes extra armor (Reliability, High-Velocity Guns, Blitzkrieg, Mechanized, Super-Heavy), navy (Fire Control, Hulls, Submarines, Naval Radar, Carriers) and air (Strategic, Dive and Heavy Bombers, Escort Fighters, Jets) techs.
