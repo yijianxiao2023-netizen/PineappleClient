@@ -19,6 +19,10 @@ A grand strategy game of Europe on the eve of the Second World War, in the spiri
 - **Attack anyone:** send your units onto another country's land or units. If you aren't at war yet, you'll confirm, and then war is declared on them and their faction. Every province you take becomes yours and turns your color.
 - **Health bars:** each unit shows how many soldiers it has left. Hover over a counter to see them, and click a battle to see both sides.
 - **Betrayal:** attack an ally's unit to leave your faction and join the other side for the rest of the match. AI allies never betray you first.
+- **Unit tiers I to V:** research better tiers for every unit type, from 100% to 200% combat power. New units train at your best tier, and you can upgrade older ones.
+- **Upkeep:** every unit costs money every day, and higher tiers cost more. If you go broke, your army loses organization.
+- **Manpower** grows every second. Research **Housing I to V** (+25% each) and conquer land to grow it faster.
+- **Battle Log** (`B`): a separate channel listing everything every country does, including research, war-goal justifications, declarations of war, capitulations and alliances.
 - **Diplomacy:** factions, war goals, declarations of war, guarantees, and joining, founding or inviting countries to factions. Countries capitulate when they lose their core territory.
 - The game ends in 1950.
 
@@ -31,6 +35,7 @@ A grand strategy game of Europe on the eve of the Second World War, in the spiri
 | Click a counter, then click a province | Move or attack (right-click also works) |
 | Shift-click / Shift-drag | Add to selection / box-select |
 | F R P A D | Focus, Research, Industry, Army, Diplomacy |
+| B | Battle Log |
 | M | Political or faction map mode |
 | Esc | Deselect or close |
 

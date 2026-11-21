@@ -1,4 +1,4 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, AIR_RANGE } from "./data.js";
+import { COUNTRIES, UNIT, UNIT_ORDER, AIR_RANGE, ROMAN } from "./data.js";
 
 const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 const rgb = (c, k = 1, a = 1) => `rgba(${Math.round(c[0] * k)},${Math.round(c[1] * k)},${Math.round(c[2] * k)},${a})`;
@@ -347,7 +347,12 @@ export class MapView {
     ctx.fillStyle = "#fff"; ctx.textBaseline = "middle"; ctx.textAlign = "left";
     ctx.font = "700 12px Inter, system-ui, sans-serif";
     ctx.fillText(String(gp.ds.length), x + 23, y + h / 2);
+    const tier = Math.max(...gp.ds.map(d => d.tier || 1));
     if (w >= 50) { ctx.font = "600 9px Inter, system-ui, sans-serif"; ctx.fillStyle = "rgba(255,255,255,0.85)"; ctx.textAlign = "right"; ctx.fillText(u.short, x + w - 3, y + h / 2); }
+    ctx.font = "800 8px Inter, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillStyle = "rgba(0,0,0,0.75)"; ctx.fillRect(x + 10, y - 6, 12, 9);
+    ctx.fillStyle = ["#d0d0d0", "#8fe08f", "#7fc8ff", "#d39bff", "#ffd45a"][tier - 1]; ctx.fillText(ROMAN[tier - 1], x + 16, y - 5);
+    ctx.textBaseline = "middle";
     ctx.lineWidth = sel ? 2.5 : 1.2;
     ctx.strokeStyle = sel ? "#ffe27a" : rel === "enemy" ? "#ff4a3d" : rel === "self" ? "#f1f1f1" : rel === "ally" ? "#7fd4ff" : "#222";
     ctx.strokeRect(x, y, w, h);

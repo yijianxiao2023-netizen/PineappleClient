@@ -58,15 +58,18 @@ export const TERRAIN = {
 };
 
 export const UNIT = {
-  inf: { name: "Infantry", short: "INF", domain: "land", att: 1.0, def: 1.6, hours: 40, eq: 1000, tanks: 0, planes: 0, mp: 10, money: 250, days: 60, color: "#a7b0ba", desc: "Cheap, tough defenders." },
-  at: { name: "Anti-Tank", short: "AT", domain: "land", att: 0.6, def: 1.9, hours: 44, eq: 900, tanks: 0, planes: 0, mp: 9, money: 300, days: 60, req: "at1", antiArmor: 0.35, color: "#e8963c", desc: "Defensive. Cuts enemy tank attacks by 35% when defending." },
-  tank: { name: "Light Tanks", short: "TNK", domain: "land", att: 2.0, def: 1.1, hours: 20, eq: 300, tanks: 100, planes: 0, mp: 6, money: 450, days: 75, req: "tank1", armor: true, color: "#8fd46a", desc: "Fast attackers. Weak in rough terrain." },
-  arm: { name: "Armored", short: "ARM", domain: "land", att: 3.0, def: 1.6, hours: 26, eq: 400, tanks: 250, planes: 0, mp: 8, money: 700, days: 100, req: "tank2", armor: true, color: "#3f9a46", desc: "Heavy armored division. The strongest attacker." },
-  ftr: { name: "Fighters", short: "FTR", domain: "air", att: 0, def: 0, hours: 8, eq: 0, tanks: 0, planes: 100, mp: 1, money: 400, days: 45, color: "#6cc8f2", desc: "Win air superiority within range of their airfield." },
-  bmb: { name: "Bombers", short: "BMB", domain: "air", att: 0, def: 0, hours: 10, eq: 0, tanks: 0, planes: 150, mp: 2, money: 550, days: 60, req: "bomber1", color: "#b884ea", desc: "Strengthen your side in nearby battles. Need fighter cover." },
-  ship: { name: "Battle Fleet", short: "FLT", domain: "sea", att: 0, def: 0, hours: 12, eq: 1500, tanks: 0, planes: 0, mp: 3, money: 1500, days: 180, color: "#4a7fd0", desc: "Naval strength for sea invasions. Bombards nearby coastal battles." },
+  inf: { name: "Infantry", short: "INF", domain: "land", att: 1.0, def: 1.6, hours: 40, eq: 1000, tanks: 0, planes: 0, mp: 10, money: 250, days: 60, upkeep: 0.4, color: "#a7b0ba", desc: "Cheap, tough defenders." },
+  at: { name: "Anti-Tank", short: "AT", domain: "land", att: 0.6, def: 1.9, hours: 44, eq: 900, tanks: 0, planes: 0, mp: 9, money: 300, days: 60, upkeep: 0.5, req: "at1", antiArmor: 0.35, color: "#e8963c", desc: "Defensive. Cuts enemy tank attacks by 35% when defending." },
+  tank: { name: "Light Tanks", short: "TNK", domain: "land", att: 2.0, def: 1.1, hours: 20, eq: 300, tanks: 100, planes: 0, mp: 6, money: 450, days: 75, upkeep: 0.8, req: "tank1", armor: true, color: "#8fd46a", desc: "Fast attackers. Weak in rough terrain." },
+  arm: { name: "Armored", short: "ARM", domain: "land", att: 3.0, def: 1.6, hours: 26, eq: 400, tanks: 250, planes: 0, mp: 8, money: 700, days: 100, upkeep: 1.2, req: "tank2", armor: true, color: "#3f9a46", desc: "Heavy armored division. The strongest attacker." },
+  ftr: { name: "Fighters", short: "FTR", domain: "air", att: 0, def: 0, hours: 8, eq: 0, tanks: 0, planes: 100, mp: 1, money: 400, days: 45, upkeep: 0.6, color: "#6cc8f2", desc: "Win air superiority within range of their airfield." },
+  bmb: { name: "Bombers", short: "BMB", domain: "air", att: 0, def: 0, hours: 10, eq: 0, tanks: 0, planes: 150, mp: 2, money: 550, days: 60, upkeep: 0.8, req: "bomber1", color: "#b884ea", desc: "Strengthen your side in nearby battles. Need fighter cover." },
+  ship: { name: "Battle Fleet", short: "FLT", domain: "sea", att: 0, def: 0, hours: 12, eq: 1500, tanks: 0, planes: 0, mp: 3, money: 1500, days: 180, upkeep: 2.5, color: "#4a7fd0", desc: "Naval strength for sea invasions. Bombards nearby coastal battles." },
 };
 export const AIR_RANGE = 170;
+export const TIER_MULT = [1, 1.2, 1.42, 1.68, 2.0];
+export const TIER_COST = [1, 1.2, 1.45, 1.75, 2.1];
+export const ROMAN = ["I", "II", "III", "IV", "V"];
 export const UNIT_ORDER = ["inf", "at", "tank", "arm", "ftr", "bmb", "ship"];
 
 export const BUILD = {
@@ -107,6 +110,24 @@ export const TECHS = [
   { id: "logistics", name: "Logistics", cat: "Electronics", year: 1938, days: 150, req: ["radio"], fx: { supply: 1, speed: 0.05 }, desc: "Units out of supply suffer less, +5% speed" },
   { id: "radar", name: "Radar", cat: "Electronics", year: 1940, days: 180, req: ["radio"], fx: { infDef: 0.05, armDef: 0.05 }, desc: "+5% defense" },
 ];
+const TIER_LINES = [
+  { type: "inf", cat: "Infantry", name: "Infantry", base: null, years: [1936, 1938, 1940, 1942] },
+  { type: "at", cat: "Anti-Tank", name: "Anti-Tank", base: "at1", years: [1938, 1939, 1941, 1943] },
+  { type: "tank", cat: "Tanks", name: "Light Tank", base: "tank1", years: [1937, 1939, 1941, 1943] },
+  { type: "arm", cat: "Tanks", name: "Armored", base: "tank2", years: [1939, 1940, 1942, 1944] },
+  { type: "ftr", cat: "Air Force", name: "Fighter", base: null, years: [1937, 1939, 1941, 1943] },
+  { type: "bmb", cat: "Air Force", name: "Bomber", base: "bomber1", years: [1937, 1939, 1941, 1943] },
+  { type: "ship", cat: "Navy", name: "Fleet", base: null, years: [1937, 1939, 1941, 1943] },
+];
+const ROMAN_T = ["I", "II", "III", "IV", "V"];
+for (const L of TIER_LINES) {
+  for (let t = 2; t <= 5; t++) {
+    const prev = t === 2 ? (L.base ? [L.base] : []) : [`${L.type}_t${t - 1}`];
+    TECHS.push({ id: `${L.type}_t${t}`, name: `${L.name} ${ROMAN_T[t - 1]}`, cat: L.cat, year: L.years[t - 2], days: 100 + t * 30, req: prev, fx: {}, tier: { type: L.type, t }, desc: `New ${L.name.toLowerCase()} units are trained at tier ${ROMAN_T[t - 1]} (${Math.round([1, 1.2, 1.42, 1.68, 2.0][t - 1] * 100)}% combat power). Older units can be upgraded.` });
+  }
+}
+for (let t = 1; t <= 5; t++) TECHS.push({ id: `housing${t}`, name: `Housing ${ROMAN_T[t - 1]}`, cat: "Housing", year: 1934 + t * 2, days: 90 + t * 30, req: t > 1 ? [`housing${t - 1}`] : [], fx: { manpower: 0.25 }, desc: "+25% manpower growth. Better housing means more recruits every day." });
+
 
 const G = (id, name, x, y, req, fx, desc, extra = {}) => ({ id, name, x, y, req, fx, desc, ...extra });
 

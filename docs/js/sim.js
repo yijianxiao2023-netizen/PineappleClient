@@ -1,4 +1,4 @@
-import { START_DATE, COUNTRIES, FACTIONS, TERRAIN, UNIT, BUILD, TECHS, GENERIC_FOCUS, NATIONAL_FOCUS, AIR_RANGE } from "./data.js";
+import { START_DATE, COUNTRIES, FACTIONS, TERRAIN, UNIT, BUILD, TECHS, GENERIC_FOCUS, NATIONAL_FOCUS, AIR_RANGE, TIER_MULT, TIER_COST, ROMAN } from "./data.js";
 
 const DAY = 86400000;
 const HOUR = 3600000;
@@ -85,7 +85,7 @@ export class Game {
   log(text, type = "info", tags = []) {
     const e = { time: this.time, text, type, tags };
     this.events.push(e);
-    if (this.events.length > 300) this.events.shift();
+    if (this.events.length > 1500) this.events.shift();
     for (const fn of this.listeners) fn(e);
   }
 
@@ -141,17 +141,28 @@ export class Game {
     this.spawnShips(c, Math.round(c.navy / 10));
   }
 
-  spawnShips(c, n) {
+  spawnShips(c, n, tier) {
     if (n <= 0) return;
     const cap = this.P[c.capital];
     const ports = this.P.filter(p => p.coastal && p.owner === c.tag && p.ctrl === c.tag).sort((a, b) => (b.vp - a.vp) || (cap ? Math.hypot(a.c[0] - cap.c[0], a.c[1] - cap.c[1]) - Math.hypot(b.c[0] - cap.c[0], b.c[1] - cap.c[1]) : 0));
     if (!ports.length) return;
-    for (let i = 0; i < n; i++) this.spawnDiv(c.tag, "ship", ports[i % Math.min(3, ports.length)].id, 1, 1);
+    for (let i = 0; i < n; i++) this.spawnDiv(c.tag, "ship", ports[i % Math.min(3, ports.length)].id, 1, 1, tier);
   }
 
   setFor(p, d) { return d.domain === "air" ? p.air : d.domain === "sea" ? p.ships : p.divs; }
-  spawnDiv(tag, type, provId, str = 1, org = 0.6) {
-    const d = { id: this.nextDivId++, tag, type, domain: UNIT[type].domain, prov: provId, str, org, path: [], prog: 0, attacking: null, entrench: 0, sea: false };
+  tierOf(tag, type) {
+    const c = this.countries[tag];
+    let t = 1;
+    for (let k = 2; k <= 5; k++) if (c.techs.has(`${type}_t${k}`)) t = k;
+    return t;
+  }
+  tm(d) { return TIER_MULT[(d.tier || 1) - 1]; }
+  unitCost(tag, type, tier = this.tierOf(tag, type)) {
+    const u = UNIT[type], k = TIER_COST[tier - 1];
+    return { money: Math.round(u.money * k), eq: Math.round(u.eq * k), tanks: Math.round(u.tanks * k), planes: Math.round(u.planes * k), mp: u.mp, days: u.days, tier, upkeep: u.upkeep * k };
+  }
+  spawnDiv(tag, type, provId, str = 1, org = 0.6, tier) {
+    const d = { id: this.nextDivId++, tag, type, tier: tier || this.tierOf(tag, type), domain: UNIT[type].domain, prov: provId, str, org, path: [], prog: 0, attacking: null, entrench: 0, sea: false };
     this.divs.set(d.id, d);
     this.setFor(this.P[provId], d).add(d.id);
     return d;
@@ -182,7 +193,7 @@ export class Game {
   friendly(a, b) { const r = this.relation(a, b); return r === "self" || r === "ally"; }
   atWarAny(tag) { return this.wars.some(w => w.sides[0].has(tag) || w.sides[1].has(tag)); }
   enemiesOf(tag) { return Object.keys(this.countries).filter(t => this.atWar(tag, t)); }
-  navyPower(tag) { let n = 0; for (const d of this.divs.values()) if (d.domain === "sea" && this.friendly(tag, d.tag)) n += d.str * 10; return Math.round(n); }
+  navyPower(tag) { let n = 0; for (const d of this.divs.values()) if (d.domain === "sea" && this.friendly(tag, d.tag)) n += d.str * 10 * this.tm(d); return Math.round(n); }
   canInvade(tag, enemy) { const mine = this.navyPower(tag); return mine > 0 && mine >= this.navyPower(enemy) * 0.9; }
   canEnter(tag, p) { const r = this.relation(tag, p.ctrl); return r === "self" || r === "ally" || r === "enemy"; }
 
@@ -205,7 +216,7 @@ export class Game {
         const land = owned ? 1 : 0.8;
         c.civEff += p.civ * f + 0.08 * land; c.milEff += p.mil * f + 0.06 * land;
         c.mpBase += (p.pop || 0) * (owned && p.home ? 1 : 0.15);
-        c.income += (0.5 + 0.3 * p.vp) * land;
+        c.income += (1 + 0.4 * p.vp) * land;
         c.provCount++;
       }
       const o = this.countries[p.core];
@@ -360,13 +371,13 @@ export class Game {
       if (!this.friendly(tag, d.tag)) continue;
       const q = this.P[d.prov];
       if (Math.hypot(q.c[0] - p.c[0], q.c[1] - p.c[1]) > AIR_RANGE) continue;
-      if (d.type === "ftr") F += d.str * (1 + this.mod(d.tag, "ftr")); else B += d.str * (1 + this.mod(d.tag, "bmb"));
+      if (d.type === "ftr") F += d.str * this.tm(d) * (1 + this.mod(d.tag, "ftr")); else B += d.str * this.tm(d) * (1 + this.mod(d.tag, "bmb"));
       list.push(d);
     }
     if (p.coastal) for (const d of this.shipList) {
       if (!this.friendly(tag, d.tag)) continue;
       const q = this.P[d.prov];
-      if (Math.hypot(q.c[0] - p.c[0], q.c[1] - p.c[1]) <= 90) S += d.str;
+      if (Math.hypot(q.c[0] - p.c[0], q.c[1] - p.c[1]) <= 90) S += d.str * this.tm(d);
     }
     return { F, B, S, list };
   }
@@ -472,7 +483,7 @@ export class Game {
     for (const d of [...sa.list, ...sd.list]) d.mission = this.hourCount;
     const attPow = d => {
       const u = UNIT[d.type];
-      let v = u.att * (1 + this.mod(d.tag, u.armor ? "armAtt" : "infAtt")) * d.str * (0.3 + 0.7 * d.org) * multA;
+      let v = u.att * this.tm(d) * (1 + this.mod(d.tag, u.armor ? "armAtt" : "infAtt")) * d.str * (0.3 + 0.7 * d.org) * multA;
       if (u.armor) v *= terr.armor * (1 - antiArmor);
       if (d.sea) v *= 0.5;
       if (winter && d.tag !== "SOV" && d.tag !== "FIN") v *= 0.75;
@@ -480,7 +491,7 @@ export class Game {
     };
     const defPow = d => {
       const u = UNIT[d.type];
-      return multD * u.def * (1 + this.mod(d.tag, u.armor ? "armDef" : "infDef")) * terr.def * (1 + 0.15 * p.fort) * (1 + 0.25 * d.entrench * (1 + this.mod(d.tag, "entrench"))) * d.str * (0.3 + 0.7 * d.org);
+      return multD * u.def * this.tm(d) * (1 + this.mod(d.tag, u.armor ? "armDef" : "infDef")) * terr.def * (1 + 0.15 * p.fort) * (1 + 0.25 * d.entrench * (1 + this.mod(d.tag, "entrench"))) * d.str * (0.3 + 0.7 * d.org);
     };
     const top = (arr, f) => arr.map(f).sort((a, b) => b - a).slice(0, 12).reduce((s, v, i) => s + v * (i < 8 ? 1 : 0.5), 0);
     const A = top(atts, attPow), D = top(defs, defPow);
@@ -528,7 +539,7 @@ export class Game {
       for (const t of ships) {
         const b = this.P[t.prov];
         if (Math.hypot(a.c[0] - b.c[0], a.c[1] - b.c[1]) > 90) continue;
-        if (this.atWar(s.tag, t.tag)) E += t.str; else if (this.friendly(s.tag, t.tag)) O += t.str;
+        if (this.atWar(s.tag, t.tag)) E += t.str * this.tm(t); else if (this.friendly(s.tag, t.tag)) O += t.str * this.tm(t);
       }
       if (E > 0) hits.set(s, 0.07 * E / (O + E) * (0.8 + this.rng() * 0.4));
     }
@@ -541,9 +552,15 @@ export class Game {
   }
 
   dailyCountry(c) {
-    c.money += c.income + c.civEff * 0.4;
+    let upkeep = 0;
+    for (const d of this.divs.values()) if (d.tag === c.tag) upkeep += UNIT[d.type].upkeep * TIER_COST[(d.tier || 1) - 1];
+    c.upkeep = upkeep;
+    c.money += c.income + c.civEff * 1.5 - upkeep;
+    c.broke = c.money < 0;
+    if (c.broke) { c.money = 0; for (const d of this.divs.values()) if (d.tag === c.tag && d.domain === "land") d.org = Math.max(0, d.org - 0.04); }
     c.pp = Math.min(2000, c.pp + 2 + (c.mods.ppGain || 0));
-    c.manpower += c.mpBase * 0.02 * (1 + (c.mods.manpower || 0));
+    c.mpGain = c.mpBase * 0.014 * (1 + (c.mods.manpower || 0));
+    c.manpower += c.mpGain;
 
     let pts = c.civEff * 5 * (1 + (c.mods.construction || 0));
     const perItem = 15 * 5 * (1 + (c.mods.construction || 0));
@@ -574,7 +591,8 @@ export class Game {
       if (d.domain === "land" ? !c.supplied.has(d.prov) : d.mission === undefined ? false : this.hourCount - d.mission < 24) continue;
       const u = UNIT[d.type];
       const need = Math.min(d.domain === "sea" ? 0.02 : 0.05, 1 - d.str);
-      const eq = need * u.eq, tk = need * u.tanks, pl = need * u.planes, mp = need * u.mp;
+      const k = TIER_COST[(d.tier || 1) - 1];
+      const eq = need * u.eq * k, tk = need * u.tanks * k, pl = need * u.planes * k, mp = need * u.mp;
       if (c.eqInf >= eq && c.tanks >= tk && c.planes >= pl && c.manpower >= mp) { c.eqInf -= eq; c.tanks -= tk; c.planes -= pl; c.manpower -= mp; d.str += need; }
     }
 
@@ -582,10 +600,10 @@ export class Game {
     const ready = c.training.filter(t => t.days <= 0);
     c.training = c.training.filter(t => t.days > 0);
     for (const t of ready) {
-      if (UNIT[t.type].domain === "sea") { this.spawnShips(c, 1); if (c.tag === this.player) this.log("A new battle fleet has been launched.", "army", [c.tag]); continue; }
+      if (UNIT[t.type].domain === "sea") { this.spawnShips(c, 1, t.tier); if (c.tag === this.player) this.log("A new battle fleet has been launched.", "army", [c.tag]); continue; }
       let at = this.P[c.capital];
       if (!at || at.ctrl !== c.tag) at = this.controlledProvs(c.tag).sort((a, b) => b.vp - a.vp)[0];
-      if (at) { this.spawnDiv(c.tag, t.type, at.id, 1, 0.5); if (c.tag === this.player) this.log(`New ${UNIT[t.type].name.toLowerCase()} ${UNIT[t.type].domain === "air" ? "wing" : "division"} ready in ${at.name}.`, "army", [c.tag]); }
+      if (at) { this.spawnDiv(c.tag, t.type, at.id, 1, 0.5, t.tier); if (c.tag === this.player) this.log(`New ${UNIT[t.type].name.toLowerCase()} ${UNIT[t.type].domain === "air" ? "wing" : "division"} ready in ${at.name}.`, "army", [c.tag]); }
     }
 
     for (let i = 0; i < c.research.length; i++) {
@@ -595,6 +613,7 @@ export class Game {
       if (r.progress >= this.techCost(c, TECH[r.id])) {
         c.techs.add(r.id); c.research[i] = null; this.recomputeMods(c);
         if (c.tag === this.player) this.log(`Research complete: ${TECH[r.id].name}.`, "research", [c.tag]);
+        else this.log(`${c.name} researched ${TECH[r.id].name}.`, "airesearch", [c.tag]);
       }
     }
 
@@ -613,7 +632,7 @@ export class Game {
       if (!t.alive) c.justifying = null;
       else if (c.justifying.days <= 0) {
         c.wargoals[t.tag] = this.time + 365 * DAY;
-        if (c.tag === this.player || this.player === t.tag) this.log(`${c.name} has a war goal against ${t.name}.`, "diplo", [c.tag, t.tag]);
+        this.log(`${c.name} now has a war goal against ${t.name} and can declare war.`, c.tag === this.player || this.player === t.tag ? "diplo" : "justify", [c.tag, t.tag]);
         c.justifying = null;
       }
     }
@@ -860,6 +879,7 @@ export class Game {
     const c = this.countries[tag];
     c.pp -= this.justifyCost(tag);
     c.justifying = { target, days: Math.round(30 * (1 - this.mod(tag, "justify"))), total: Math.round(30 * (1 - this.mod(tag, "justify"))) };
+    this.log(`${c.name} began justifying a war goal against ${this.countries[target].name}.`, "justify", [tag, target]);
     return true;
   }
   canDeclare(tag, target) {
@@ -912,25 +932,47 @@ export class Game {
     const c = this.countries[tag], u = UNIT[type];
     if (u.req && !c.techs.has(u.req)) return `Research ${TECHS.find(t => t.id === u.req).name}`;
     if (u.domain === "sea" && !this.P.some(p => p.coastal && p.owner === tag && p.ctrl === tag)) return "No coastline";
-    if (c.money < u.money) return `Need $${u.money}`;
-    if (c.eqInf < u.eq) return `Need ${u.eq} equipment`;
-    if (c.tanks < u.tanks) return `Need ${u.tanks} tanks`;
-    if (c.planes < u.planes) return `Need ${u.planes} aircraft`;
-    if (c.manpower < u.mp) return `Need ${u.mp}k manpower`;
+    const k = this.unitCost(tag, type);
+    if (c.money < k.money) return `Need $${k.money}`;
+    if (c.eqInf < k.eq) return `Need ${k.eq} equipment`;
+    if (c.tanks < k.tanks) return `Need ${k.tanks} tanks`;
+    if (c.planes < k.planes) return `Need ${k.planes} aircraft`;
+    if (c.manpower < k.mp) return `Need ${k.mp}k manpower`;
     return null;
   }
   canTrain(tag, type) { return !this.trainBlock(tag, type); }
   train(tag, type) {
     if (!this.canTrain(tag, type)) return false;
-    const c = this.countries[tag], u = UNIT[type];
-    c.eqInf -= u.eq; c.tanks -= u.tanks; c.planes -= u.planes; c.manpower -= u.mp; c.money -= u.money;
-    c.training.push({ type, days: u.days, total: u.days });
+    const c = this.countries[tag], k = this.unitCost(tag, type);
+    c.eqInf -= k.eq; c.tanks -= k.tanks; c.planes -= k.planes; c.manpower -= k.mp; c.money -= k.money;
+    c.training.push({ type, days: k.days, total: k.days, tier: k.tier });
     return true;
+  }
+
+  upgradeCost(tag, d) {
+    const best = this.tierOf(tag, d.type);
+    if ((d.tier || 1) >= best) return null;
+    const u = UNIT[d.type], diff = TIER_COST[best - 1] - TIER_COST[(d.tier || 1) - 1];
+    return { tier: best, money: Math.round(u.money * diff * 0.7), eq: Math.round(u.eq * diff * 0.5), tanks: Math.round(u.tanks * diff * 0.5), planes: Math.round(u.planes * diff * 0.5) };
+  }
+  upgradeUnits(tag, type, max = 999) {
+    const c = this.countries[tag];
+    let n = 0;
+    for (const d of this.divs.values()) {
+      if (n >= max) break;
+      if (d.tag !== tag || d.type !== type || d.attacking != null) continue;
+      const k = this.upgradeCost(tag, d);
+      if (!k || c.money < k.money || c.eqInf < k.eq || c.tanks < k.tanks || c.planes < k.planes) continue;
+      c.money -= k.money; c.eqInf -= k.eq; c.tanks -= k.tanks; c.planes -= k.planes;
+      d.tier = k.tier; n++;
+    }
+    if (n && tag === this.player) this.log(`Upgraded ${n} ${UNIT[type].name.toLowerCase()} unit${n > 1 ? "s" : ""} to tier ${ROMAN[this.tierOf(tag, type) - 1]}.`, "army", [tag]);
+    return n;
   }
 
   strength(tag) {
     let s = 0;
-    for (const d of this.divs.values()) if (d.tag === tag && d.domain === "land") s += ({ arm: 2.2, tank: 1.6 }[d.type] || 1) * d.str;
+    for (const d of this.divs.values()) if (d.tag === tag && d.domain === "land") s += ({ arm: 2.2, tank: 1.6 }[d.type] || 1) * d.str * this.tm(d);
     return s;
   }
 }
