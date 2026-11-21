@@ -1,4 +1,4 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, AIR_RANGE, ROMAN } from "./data.js?v=1795220978";
+import { COUNTRIES, UNIT, UNIT_ORDER, AIR_RANGE, ROMAN } from "./data.js?v=1795221400";
 
 const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 const rgb = (c, k = 1, a = 1) => `rgba(${Math.round(c[0] * k)},${Math.round(c[1] * k)},${Math.round(c[2] * k)},${a})`;
@@ -18,6 +18,7 @@ export class MapView {
     this.buildMode = null;
     this.dirty = true;
     this.paths = game.P.map(p => { const path = new Path2D(); for (const poly of p.shape) for (const ring of poly) { ring.forEach(([x, y], i) => i ? path.lineTo(x, y) : path.moveTo(x, y)); path.closePath(); } return path; });
+    this.bbox = game.P.map(p => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const poly of p.shape) for (const [x, y] of poly[0]) { if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y; } return [x0, y0, x1, y1]; });
     this.coastPath = new Path2D();
     for (const poly of game.map.coast) for (const ring of poly) { ring.forEach(([x, y], i) => i ? this.coastPath.lineTo(x, y) : this.coastPath.moveTo(x, y)); this.coastPath.closePath(); }
     this.buildEdges();
@@ -101,17 +102,21 @@ export class MapView {
   provAt(sx, sy) {
     const [x, y] = this.toWorld(sx, sy);
     const ctx = this.ctx;
-    for (let i = 0; i < this.paths.length; i++) {
-      const p = this.g.P[i];
-      if (Math.abs(p.c[0] - x) > 160 || Math.abs(p.c[1] - y) > 160) continue;
-      if (ctx.isPointInPath(this.paths[i], x, y)) return p;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    let hit = null;
+    for (let i = 0; i < this.paths.length && !hit; i++) {
+      const b = this.bbox[i];
+      if (x < b[0] || x > b[2] || y < b[1] || y > b[3]) continue;
+      if (ctx.isPointInPath(this.paths[i], x, y)) hit = this.g.P[i];
     }
-    return null;
+    ctx.restore();
+    return hit;
   }
 
   countersAt(sx, sy) {
     if (!this.counterRects) return null;
-    for (let i = this.counterRects.length - 1; i >= 0; i--) { const r = this.counterRects[i]; if (sx >= r.x && sx <= r.x + r.w && sy >= r.y && sy <= r.y + r.h) return r; }
+    for (let i = this.counterRects.length - 1; i >= 0; i--) { const r = this.counterRects[i]; if (sx >= r.x - 3 && sx <= r.x + r.w + 3 && sy >= r.y - 4 && sy <= r.y + r.h + 3) return r; }
     return null;
   }
 
