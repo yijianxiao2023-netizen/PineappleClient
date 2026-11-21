@@ -32,7 +32,8 @@ A grand strategy game of Europe on the eve of the Second World War, in the spiri
 
 | Input | Action |
 |---|---|
-| Space | Cycle speed: paused → 1 → 2 → 3 → 4 → 5 → paused |
+| Space | Cycle speed: paused → 1 → 2 → paused (→ 3 → 4 → 5 once unlocked) |
+| Unlocking speeds | Speeds 3–5 unlock on your device after you win by controlling the entire map |
 | 1–5 | Jump to a speed |
 | Right-drag / scroll | Move around the map and zoom (arrow keys also pan; right-click without dragging cancels) |
 | Click a counter, then click a province | Move or attack (right-click also works) |

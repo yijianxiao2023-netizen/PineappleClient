@@ -223,3 +223,5 @@ body.dockmin #dock { height: auto; } body.dockmin #dockBody { display: none; }
 body.dockmin #info { bottom: 56px; max-height: calc(100vh - 140px); }
 #log { display: none !important; }
 @media (max-width: 760px) { #dock { width: calc(100vw - 80px); height: 30vh; } #info { bottom: calc(30vh + 22px); } }
+
+#speeds button.locked { opacity: .55; font-size: 11px; }
