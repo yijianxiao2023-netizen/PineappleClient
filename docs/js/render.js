@@ -1,4 +1,4 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, AIR_RANGE, ROMAN } from "./data.js?v=1795221400";
+import { COUNTRIES, UNIT, UNIT_ORDER, AIR_RANGE, ROMAN } from "./data.js?v=1795221551";
 
 const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 const rgb = (c, k = 1, a = 1) => `rgba(${Math.round(c[0] * k)},${Math.round(c[1] * k)},${Math.round(c[2] * k)},${a})`;
@@ -222,27 +222,45 @@ export class MapView {
   drawPreview() {
     const pv = this.preview, ctx = this.ctx, g = this.g;
     if (!pv || !this.selected.size) return;
-    const pts = [g.P[pv.from].c, ...pv.path.map(id => g.P[id].c)].map(c => this.toScreen(c[0], c[1]));
+    const s = this.scale;
     ctx.save();
+    ctx.setTransform(this.dpr * s, 0, 0, this.dpr * s, this.dpr * this.ox, this.dpr * this.oy);
+    ctx.fillStyle = pv.none ? "rgba(255,80,60,0.25)" : pv.attack ? "rgba(255,90,72,0.35)" : "rgba(255,230,120,0.35)";
+    ctx.fill(this.paths[pv.to]);
+    ctx.lineWidth = 3 / s; ctx.strokeStyle = pv.none ? "#ff6a58" : pv.attack ? "#ff6a58" : "#ffe27a"; ctx.stroke(this.paths[pv.to]);
+    ctx.restore();
+    ctx.save();
+    if (pv.none) {
+      const [mx, my] = this.mouse || [0, 0];
+      ctx.font = "700 12px Inter, system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+      ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.8)"; ctx.strokeText("No route there", mx + 14, my + 10);
+      ctx.fillStyle = "#ff9a8a"; ctx.fillText("No route there", mx + 14, my + 10);
+      ctx.restore(); return;
+    }
+    const pts = [g.P[pv.from].c, ...pv.path.map(id => g.P[id].c)].map(c => this.toScreen(c[0], c[1]));
+    const t = (performance.now() / 600) % 1;
     for (let i = 0; i < pts.length - 1; i++) {
       const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
-      const len = Math.hypot(bx - ax, by - ay); if (len < 4) continue;
-      const ux = (bx - ax) / len, uy = (by - ay) / len, gap = Math.min(7, len * 0.15);
+      const len = Math.hypot(bx - ax, by - ay); if (len < 2) continue;
+      const ux = (bx - ax) / len, uy = (by - ay) / len, gap = Math.min(6, len * 0.12);
       const sx = ax + ux * gap, sy = ay + uy * gap, ex = bx - ux * gap, ey = by - uy * gap;
-      const segLen = Math.hypot(ex - sx, ey - sy), head = Math.min(18, segLen * 0.5), shaft = Math.max(0, segLen - head);
+      const segLen = Math.hypot(ex - sx, ey - sy), head = Math.min(18, Math.max(8, segLen * 0.5)), shaft = Math.max(0, segLen - head);
       const hx = sx + ux * shaft, hy = sy + uy * shaft, nx = -uy, ny = ux, w = 5.5, hw = 12;
       ctx.beginPath();
       ctx.moveTo(sx + nx * w, sy + ny * w); ctx.lineTo(hx + nx * w, hy + ny * w); ctx.lineTo(hx + nx * hw, hy + ny * hw); ctx.lineTo(ex, ey);
       ctx.lineTo(hx - nx * hw, hy - ny * hw); ctx.lineTo(hx - nx * w, hy - ny * w); ctx.lineTo(sx - nx * w, sy - ny * w); ctx.closePath();
-      ctx.fillStyle = pv.attack ? "rgba(255,90,72,0.45)" : "rgba(255,226,122,0.4)"; ctx.fill();
-      ctx.setLineDash([5, 3]); ctx.lineWidth = 2; ctx.strokeStyle = pv.attack ? "#ff7a68" : "#ffe27a"; ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = pv.attack ? "rgba(255,90,72,0.55)" : "rgba(255,226,122,0.55)"; ctx.fill();
+      ctx.setLineDash([6, 4]); ctx.lineDashOffset = -t * 10; ctx.lineWidth = 2.5; ctx.strokeStyle = "#111"; ctx.stroke();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = pv.attack ? "#ffb0a4" : "#fff6cf"; ctx.stroke(); ctx.setLineDash([]);
     }
     const [lx, ly] = pts[pts.length - 1];
-    const label = `${pv.path.length} province${pv.path.length > 1 ? "s" : ""}${pv.war ? " · declares war" : pv.attack ? " · attack" : ""}`;
-    ctx.font = "700 11px Inter, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-    ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.7)"; ctx.strokeText(label, lx, ly - 14);
-    ctx.fillStyle = pv.attack ? "#ff9a8a" : "#ffe9a8"; ctx.fillText(label, lx, ly - 14);
+    const label = `${pv.path.length} step${pv.path.length > 1 ? "s" : ""} · LEFT-CLICK to ${pv.attack ? "attack" : "move"}`;
+    ctx.font = "700 12px Inter, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    const tw = ctx.measureText(label).width + 12;
+    ctx.fillStyle = "rgba(10,12,16,0.85)"; ctx.fillRect(lx - tw / 2, ly - 34, tw, 18);
+    ctx.fillStyle = pv.attack ? "#ff9a8a" : "#ffe9a8"; ctx.fillText(label, lx, ly - 18);
     ctx.restore();
+    this.dirty = true;
   }
 
   drawPaths() {

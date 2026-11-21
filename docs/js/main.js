@@ -1,7 +1,7 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795221400";
-import { Game, dateStr } from "./sim.js?v=1795221400";
-import { runAI, aiAcceptsFaction } from "./ai.js?v=1795221400";
-import { MapView, drawUnitIcon } from "./render.js?v=1795221400";
+import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795221551";
+import { Game, dateStr } from "./sim.js?v=1795221551";
+import { runAI, aiAcceptsFaction } from "./ai.js?v=1795221551";
+import { MapView, drawUnitIcon } from "./render.js?v=1795221551";
 
 const $ = id => document.getElementById(id);
 const SPEEDS = [0, 2, 4, 8, 20, 60];
@@ -32,7 +32,7 @@ let battleLog = [], unread = 0, logFilter = "all", endShown = false, acc = 0, la
 const canvas = $("map");
 
 async function boot() {
-  const res = await fetch("data/map.json?v=1795221400");
+  const res = await fetch("data/map.json?v=1795221551");
   MAP = await res.json();
   const preview = new Game(MAP, { seed: 1 });
   view = new MapView(canvas, preview);
@@ -607,8 +607,9 @@ function showDivInfo() {
 function updatePreview() {
   view.preview = null;
   if (!game || !view.selected.size || !view.hoverProv) return;
+  view.preview = { none: true, to: view.hoverProv.id };
   const d = [...view.selected].map(i => game.divs.get(i)).find(x => x && x.domain === "land") || game.divs.get([...view.selected][0]);
-  if (!d || d.prov === view.hoverProv.id) return;
+  if (!d || d.prov === view.hoverProv.id) { view.preview = null; return; }
   let path = game.computePath(d, view.hoverProv.id);
   const rel = game.relation(player, view.hoverProv.ctrl);
   let blocked = false;
@@ -620,7 +621,7 @@ function updatePreview() {
     game.rebuildRelations();
     blocked = true;
   }
-  if (path && path.length) view.preview = { from: d.prov, path: path.map(s => s.id), attack: rel === "enemy" || blocked, war: blocked };
+  if (path && path.length) view.preview = { from: d.prov, to: view.hoverProv.id, path: path.map(s => s.id), attack: rel === "enemy" || blocked, war: blocked };
 }
 
 function finishOrder(p) {
@@ -688,9 +689,11 @@ canvas.addEventListener("pointermove", e => {
     if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 10) down.moved = true;
     if (view.box) { view.box.x1 = e.clientX; view.box.y1 = e.clientY; view.dirty = true; }
     else if (down.moved && down.btn === 0) { view.ox = down.ox + e.clientX - down.x; view.oy = down.oy + e.clientY - down.y; view.clamp(); view.dirty = true; }
-  } else if (e.pointerType === "mouse") {
+  } else if (e.pointerType !== "touch") {
     const p = view.provAt(e.clientX, e.clientY);
+    view.mouse = [e.clientX, e.clientY];
     if (p !== view.hoverProv) { view.hoverProv = p; view.dirty = true; updatePreview(); }
+    else if (view.selected.size) view.dirty = true;
     const ctr = game ? view.countersAt(e.clientX, e.clientY) : null;
     const tip = $("tip");
     if (ctr) {

@@ -211,5 +211,5 @@ input[type=range] { width: 100%; accent-color: var(--gold); }
 .row.crow .racts { width: 100%; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
 .row.crow .racts:empty { display: none; }
 
-#moveHint { position: fixed; top: 62px; left: 50%; transform: translateX(-50%); z-index: 25; background: rgba(30,26,12,.95); border: 1px solid var(--gold); padding: 8px 16px; font-size: 13.5px; box-shadow: 0 8px 24px rgba(0,0,0,.5); pointer-events: none; white-space: nowrap; }
+#moveHint { position: fixed; bottom: 18px; top: auto; left: 50%; transform: translateX(-50%); z-index: 25; background: rgba(30,26,12,.95); border: 1px solid var(--gold); padding: 8px 16px; font-size: 13.5px; box-shadow: 0 8px 24px rgba(0,0,0,.5); pointer-events: none; white-space: nowrap; }
 #moveHint b { color: var(--gold-2); }
