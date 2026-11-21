@@ -1,7 +1,7 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795222749";
-import { Game, dateStr } from "./sim.js?v=1795222749";
-import { runAI, aiAcceptsFaction } from "./ai.js?v=1795222749";
-import { MapView, drawUnitIcon } from "./render.js?v=1795222749";
+import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795223247";
+import { Game, dateStr } from "./sim.js?v=1795223247";
+import { runAI, aiAcceptsFaction } from "./ai.js?v=1795223247";
+import { MapView, drawUnitIcon } from "./render.js?v=1795223247";
 
 const $ = id => document.getElementById(id);
 const SPEEDS = [0, 2, 4, 8, 20, 60];
@@ -32,7 +32,7 @@ let battleLog = [], unread = 0, logFilter = "all", endShown = false, acc = 0, la
 const canvas = $("map");
 
 async function boot() {
-  const res = await fetch("data/map.json?v=1795222749");
+  const res = await fetch("data/map.json?v=1795223247");
   MAP = await res.json();
   const preview = new Game(MAP, { seed: 1 });
   view = new MapView(canvas, preview);
@@ -97,7 +97,7 @@ function onEvent(e) {
   if (e.type === "world" && !mine) return;
   addLog(e);
   if ((e.type === "war" || e.type === "major") && (mine || major)) toast(e.text, e.type === "war" ? "war" : "");
-  if (e.type === "war" && e.tags[1] === player) { setSpeed(0); }
+  if (e.type === "war" && e.tags[1] === player && / declared war on /.test(e.text)) { setSpeed(0); }
   panelDay = -1;
 }
 
