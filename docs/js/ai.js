@@ -1,4 +1,4 @@
-import { TECHS, UNIT } from "./data.js?v=1795219986";
+import { TECHS, UNIT } from "./data.js?v=1795220562";
 
 const TECH_ORDER = ["tools1", "constr1", "housing1", "infwep1", "inf_t2", "arty1", "DOCTRINE", "tank1", "bomber1", "radio", "ftr_t2", "housing2", "suppwep", "at1", "tools2", "constr2", "inf_t3", "tank_t2", "ftr2", "motor", "infwep2", "tank2", "at_t2", "bmb_t2", "housing3", "concind", "logistics", "arm_t2", "inf_t4", "cas", "ftr_t3", "tank_t3", "ship_t2", "arty2", "doc2", "at_t3", "radar", "housing4", "constr3", "arm_t3", "inf_t5", "ftr3", "bmb_t3", "tools3", "tank3", "tank_t4", "ftr_t4", "housing5", "arm_t4", "infwep3", "ship_t3"];
 const DOCTRINE = { GER: "doc_mobile", SOV: "doc_mass", FRA: "doc_plan", ENG: "doc_fire", ITA: "doc_fire" };
@@ -10,6 +10,7 @@ export function runAI(g, c) {
   const day = Math.floor(g.hourCount / 24);
   economy(g, c);
   if ((day + hash(c.tag)) % 7 === 0) diplomacy(g, c);
+  if ((day + hash(c.tag)) % 15 === 3) aiDiplomacy(g, c);
   military(g, c, day);
 }
 
@@ -306,4 +307,62 @@ export function aiAcceptsFaction(g, tag, factionId) {
   if (c.ideology === leader.ideology) return true;
   if (c.ideology === "neutral" && g.enemiesOf(tag).some(e => [...f.members].some(m => g.atWar(m, e)))) return true;
   return false;
+}
+
+
+function aiDiplomacy(g, c) {
+  if (c.overlord) return;
+  const now = g.time, DAY = 86400000;
+  const toPlayerOk = t => t !== g.player || now - (c.lastProp || 0) > 120 * DAY;
+  const send = (type, to, terms) => { if (!toPlayerOk(to)) return false; if (to === g.player) c.lastProp = now; g.propose(type, c.tag, to, terms); return true; };
+
+  const threats = g.threatsTo(c.tag);
+  if (!g.factionOf(c.tag) && threats.length && g.rng() < 0.6) {
+    const options = g.factions.filter(f => g.countries[f.leader]?.alive && !threats.some(t => f.members.has(t)) && ![...f.members].some(m => g.atWar(m, c.tag)));
+    options.sort((a, b) => g.factionStrength(b) - g.factionStrength(a));
+    const f = options.find(o => g.aiAccept("alliance", c.tag, o.leader).ok || o.leader === g.player);
+    if (f) { send("alliance", f.leader, {}); return; }
+    const buddy = g.alive().find(o => o.tag !== c.tag && !g.factionOf(o.tag) && !o.overlord && !g.atWar(o.tag, c.tag) && g.threatsTo(o.tag).some(t => threats.includes(t)));
+    if (buddy && g.rng() < 0.5) { send("alliance", buddy.tag, {}); return; }
+  }
+  const myF = g.factionOf(c.tag);
+  if (myF && myF.leader === c.tag && g.rng() < 0.15) {
+    const cand = g.alive().find(o => o.tag !== c.tag && !o.major && !g.factionOf(o.tag) && !o.overlord && !g.atWar(o.tag, c.tag) && o.ideology === c.ideology);
+    if (cand) { send("alliance", cand.tag, {}); return; }
+  }
+
+  for (const w of g.wars) {
+    const s = w.sides[0].has(c.tag) ? 0 : w.sides[1].has(c.tag) ? 1 : -1;
+    if (s < 0) continue;
+    const leadsSide = (w.main || []).includes(c.tag) || myF?.leader === c.tag;
+    if (!leadsSide) continue;
+    const foes = [...w.sides[1 - s]];
+    const foe = foes.find(t => (w.main || []).includes(t)) || foes.sort((a, b) => g.strength(b) - g.strength(a))[0];
+    if (!foe) continue;
+    const days = (now - w.start) / DAY;
+    const ws = g.warScore(c.tag, foe);
+    if (days > 90 && ws > 0.25) {
+      const terms = { demander: c.tag, keep: true, keepCount: g.conqueredFrom(c.tag, foe).length, gold: ws > 0.45 ? Math.round(g.countries[foe].money * 0.3) : 0 };
+      if (send("peace", foe, terms)) return;
+    } else if (days > 120 && ws < -0.3) {
+      const terms = { demander: foe, keep: true, keepCount: g.conqueredFrom(foe, c.tag).length, gold: 0 };
+      if (send("peace", foe, terms)) return;
+    } else if (days > 540 && Math.abs(ws) < 0.1 && g.rng() < 0.3) {
+      if (send("peace", foe, { demander: null })) return;
+    }
+  }
+
+  if ((c.aggro || 0) > 0.3 && !g.atWarAny(c.tag) && g.rng() < 0.25) {
+    const neigh = new Set();
+    for (const p of g.P) if (p.owner === c.tag) for (const n of p.adj) { const o = g.P[n].owner; if (o !== c.tag) neigh.add(o); }
+    const cands = [...neigh].filter(t => g.countries[t].alive && !g.friendly(c.tag, t) && !g.truce(c.tag, t) && !c.wargoals[t]);
+    cands.sort((a, b) => g.power(a) - g.power(b));
+    const t = cands[0];
+    if (!t) return;
+    const ratio = g.power(c.tag) / g.power(t);
+    const T = g.countries[t];
+    if (ratio > 6 && !T.major && !g.factionOf(t) && g.year >= 1937) send("puppet", t, {});
+    else if (ratio > 3) send("tiles", t, { tiles: g.borderTiles(c.tag, t, 3).map(p => p.id) });
+    else if (ratio > 2.5) send("gold", t, { gold: Math.round(Math.min(T.money * 0.5, T.income * 10)) });
+  }
 }
