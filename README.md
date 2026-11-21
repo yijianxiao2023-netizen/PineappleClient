@@ -13,7 +13,7 @@ A grand strategy game of Europe on the eve of the Second World War, in the spiri
 - **Research:** industry, land, armor, doctrines and electronics, with a penalty for researching ahead of time.
 - **National focuses:** a shared tree plus extra national focuses for the five great powers.
 - **Units, each with its own icon and color:** Infantry, Anti-Tank, Light Tanks, Armored divisions, Fighters, Bombers and Battle Fleets. A legend sits on the map (toggle with `L`).
-- **Movement takes real time.** At speed 1, infantry takes about 100 seconds per province (25 s at speed 3, 10 s at speed 4, about 3 s at speed 5). Moving units slide across the map, and every province on the route gets its own arrow that fills up as the unit crosses it.
+- **Movement takes real time.** One game day takes 10 minutes at speed 1 (5 min at 2, 2.5 min at 3, 1 min at 4, 20 s at 5). Infantry needs about 40 game hours per province. Moving units slide across the map, and every province on the route gets its own arrow that fills up as the unit crosses it.
 - **Warfare:** terrain, forts, entrenchment, organization and strength, supply lines, retreats and encirclements. Anti-tank divisions blunt tank attacks. Fighters win air superiority, and bombers boost nearby battles. Fleets fight each other, bombard coastal battles and decide naval invasions.
 - **More land means more factories, gear and money.** Every province you control adds industry and daily income, and you can use the factories you capture. Money pays for every unit and building.
 - **Economy:** income comes from land and factories. Greece earns about $75k a day and Germany about $300k. Attacking without a war goal costs a $10,000 war tax.
