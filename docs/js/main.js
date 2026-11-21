@@ -1,10 +1,11 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795224510";
-import { Game, dateStr } from "./sim.js?v=1795224510";
-import { runAI, aiAcceptsFaction } from "./ai.js?v=1795224510";
-import { MapView, drawUnitIcon } from "./render.js?v=1795224510";
+import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795233706";
+import { Game, dateStr } from "./sim.js?v=1795233706";
+import { runAI, aiAcceptsFaction } from "./ai.js?v=1795233706";
+import { MapView, drawUnitIcon } from "./render.js?v=1795233706";
 
 const $ = id => document.getElementById(id);
-const SPEEDS = [0, 0.04, 0.08, 0.16, 0.4, 0.8];
+const SPEEDS = [0, 0.04, 0.08, 0.16, 0.4, 0.8, 1.6, 4];
+const SPEED_LABEL = ["Paused", "1", "2", "3", "4", "5", "10", "25"];
 const END = Date.UTC(1950, 0, 1);
 const fmt = n => { const a = Math.abs(n), sg = n < 0 ? "-" : ""; return a >= 1e9 ? sg + (a / 1e9).toFixed(2) + "B" : a >= 1e7 ? sg + (a / 1e6).toFixed(0) + "M" : a >= 1e6 ? sg + (a / 1e6).toFixed(1) + "M" : a >= 1e4 ? sg + (a / 1000).toFixed(0) + "k" : a >= 1000 ? sg + (a / 1000).toFixed(1) + "k" : sg + Math.floor(a).toString(); };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -32,7 +33,7 @@ let battleLog = [], unread = 0, logFilter = "all", endShown = false, acc = 0, la
 const canvas = $("map");
 
 async function boot() {
-  const res = await fetch("data/map.json?v=1795224510");
+  const res = await fetch("data/map.json?v=1795233706");
   MAP = await res.json();
   const preview = new Game(MAP, { seed: 1 });
   view = new MapView(canvas, preview);
@@ -79,7 +80,7 @@ function startGame(tag) {
   game.on(onEvent);
   setSpeed(0);
   const f = game.factionOf(tag);
-  toast(`You lead ${game.c(tag).name}${f ? ", a member of the " + f.name : ""}. Press Space to speed up time. Speeds 3–5 unlock once you win by controlling the entire map.`);
+  toast(`You lead ${game.c(tag).name}${f ? ", a member of the " + f.name : ""}. Press Space to speed up time.`);
   openTab("focus");
 }
 
@@ -150,7 +151,7 @@ function toast(text, cls = "") {
 }
 
 function setupHud() {
-  $("speeds").innerHTML = `<button class="pause" data-s="0" title="Pause">❚❚</button>` + [1, 2, 3, 4, 5].map(s => `<button data-s="${s}" title="Speed ${s}">${s}</button>`).join("");
+  $("speeds").innerHTML = `<button class="pause" data-s="0" title="Pause">❚❚</button>` + [1, 2, 3, 4, 5, 6, 7].map(s => `<button data-s="${s}" title="Speed ${SPEED_LABEL[s]}${s === 6 ? " (key 6)" : s === 7 ? " (key 7)" : ""}">${SPEED_LABEL[s]}</button>`).join("");
   $("speeds").onclick = e => { const b = e.target.closest("button"); if (b) setSpeed(+b.dataset.s); };
   document.querySelectorAll("#sidebar [data-tab]").forEach(b => b.onclick = () => b.dataset.tab === "battlelog" ? toggleDock() : openTab(tab === b.dataset.tab ? null : b.dataset.tab));
   $("modeBtn").onclick = toggleMode;
@@ -176,15 +177,10 @@ function setupHud() {
   updateHud();
 }
 
-const UNLOCK_KEY = "irondawn_fast_speeds";
-function fastUnlocked() { try { return localStorage.getItem(UNLOCK_KEY) === "1"; } catch { return false; } }
-function maxSpeed() { return fastUnlocked() ? 5 : 2; }
-function lockedToast() { toast("Speeds 3, 4 and 5 unlock on this device after you win by controlling the entire map."); }
 function setSpeed(s) {
-  if (s > maxSpeed()) { lockedToast(); s = maxSpeed(); if (speed === s) return; }
   if (s > 0) lastSpeed = s;
   speed = s;
-  document.querySelectorAll("#speeds button").forEach(b => { b.classList.toggle("on", +b.dataset.s === s); const lk = +b.dataset.s > maxSpeed(); b.classList.toggle("locked", lk); b.title = lk ? `Speed ${b.dataset.s} (locked: win by controlling the entire map)` : b.dataset.s === "0" ? "Pause" : `Speed ${b.dataset.s}`; b.textContent = b.dataset.s === "0" ? "❚❚" : lk ? "🔒" : b.dataset.s; });
+  document.querySelectorAll("#speeds button").forEach(b => b.classList.toggle("on", +b.dataset.s === s));
 }
 
 function toggleMode() { view.mode = view.mode === "political" ? "faction" : "political"; view.patterns = {}; view.dirty = true; toast(view.mode === "faction" ? "Map mode: Factions" : "Map mode: Political"); }
@@ -376,7 +372,7 @@ function renderHelp() {
   return `<div class="help">
   <p><b>Goal:</b> Lead your nation from 1936 to 1950. Build industry, research technology, raise armies and win your wars. The starting alliances follow history, but every war is decided fresh each game.</p>
   <h4>Controls</h4><ul>
-    <li><kbd>Space</kbd> steps the speed up: paused → 1 → 2 → … → paused again. <kbd>1</kbd>–<kbd>5</kbd> jump straight to a speed. Only speeds 1 and 2 are available at first; <b>speeds 3–5 unlock on your device once you win by controlling the entire map</b>.</li>
+    <li><kbd>Space</kbd> steps the speed up: paused → 1 → 2 → 3 → 4 → 5 → 10 → 25 → paused again. <kbd>1</kbd>–<kbd>5</kbd> jump straight to a speed, <kbd>6</kbd> is speed 10 and <kbd>7</kbd> is speed 25.</li>
     <li><b>Right-click and drag</b> to move around the map (look at a different part of it). Scroll to zoom. The arrow keys also move the map. A right-click without dragging cancels your selection.</li>
     <li><b>Click your unit</b> (or anywhere in a province where you have units) to select it. Hover over where you want to go, then <b>left-click</b> to send it there. Right-click cancels. <kbd>Shift</kbd>, <kbd>Ctrl</kbd> or <kbd>⌘</kbd>-click adds (or removes) units, <kbd>Shift</kbd>-drag box-selects, <kbd>G</kbd> selects all your land units, and clicking the sea deselects.</li>
     <li><b>Group attacks:</b> send several units at one enemy tile and each one takes a different neighboring tile, so they all hit it at once.</li>
@@ -389,7 +385,7 @@ function renderHelp() {
   <h4>Units</h4><ul>
     ${UNIT_ORDER.map(t => `<li style="list-style:none;margin-left:-18px;display:flex;gap:8px;align-items:center">${icon(t, 22)}<span><b>${UNIT[t].name}</b>: ${esc(UNIT[t].desc)}</span></li>`).join("")}
     <li>Every counter shows the unit type icon, how many units are in it, and green (strength) and yellow (organization) bars. A white border means yours, blue means an ally, red means an enemy.</li>
-    <li>Time: one game day takes 10 minutes at speed 1, 5 minutes at speed 2, 2.5 minutes at speed 3, 1 minute at speed 4 and 30 seconds at speed 5. Research never takes more than 42 game days (7 hours at speed 1).</li>
+    <li>Time: one game day takes 10 minutes at speed 1, 5 minutes at speed 2, 2.5 minutes at speed 3, 1 minute at speed 4, 30 seconds at speed 5, 15 seconds at speed 10 and 6 seconds at speed 25. Research never takes more than 42 game days (7 hours at speed 1).</li>
     <li>Movement takes time. Infantry needs about 25 seconds per province at speed 1 (about 6 s at speed 3, about 1 s at speed 5). Tanks are about twice as fast, aircraft and fleets faster still. Rough terrain is slower.</li></ul>
   <h4>One unit per tile</h4><ul>
     <li>Each tile can hold <b>one</b> land unit (plus one air wing and one fleet). Units can't stack.</li>
@@ -839,8 +835,8 @@ function handleClick(x, y, shift, ptype) {
 addEventListener("keydown", e => {
   if (!game || e.target.tagName === "INPUT") return;
   const k = e.key.toLowerCase();
-  if (k === " ") { e.preventDefault(); setSpeed(speed >= maxSpeed() ? 0 : speed + 1); toast(speed ? `Speed ${speed}` : "Paused"); }
-  else if ("12345".includes(k) && k.length === 1) setSpeed(+k);
+  if (k === " ") { e.preventDefault(); setSpeed(speed >= SPEEDS.length - 1 ? 0 : speed + 1); toast(speed ? `Speed ${SPEED_LABEL[speed]}` : "Paused"); }
+  else if ("1234567".includes(k) && k.length === 1) setSpeed(+k);
   else if (k === "g") { view.selected.clear(); for (const d of game.divsOf(player)) view.selected.add(d.id); view.dirty = true; if (view.selected.size) { showDivInfo(); toast(`Selected all ${view.selected.size} land units`); } }
   else if (k === "f") openTab(tab === "focus" ? null : "focus");
   else if (k === "r") openTab(tab === "research" ? null : "research");
@@ -915,9 +911,7 @@ function showGameOver() {
   setSpeed(0);
   const g = game.gameOver;
   const c = game.c(player);
-  let unlockMsg = "";
-  if (g.conquest) { const had = fastUnlocked(); try { localStorage.setItem(UNLOCK_KEY, "1"); } catch {} if (!had) unlockMsg = `<p style="color:var(--gold-2)"><b>Unlocked on this device:</b> speeds 3, 4 and 5.</p>`; setSpeed(0); }
-  $("modalCard").innerHTML = `<h2>${g.end ? "The End" : g.win ? "Victory" : "Defeat"}</h2><p>${esc(g.text)}</p>${unlockMsg}
+  $("modalCard").innerHTML = `<h2>${g.end ? "The End" : g.win ? "Victory" : "Defeat"}</h2><p>${esc(g.text)}</p>
     <p class="muted">${dateStr(game.time)} · ${c.kills} enemy divisions destroyed · ${c.losses} divisions lost</p>
     <div class="acts"><button class="btn gold" id="againBtn">New game</button>${!g.win ? "" : `<button class="btn" id="keepBtn">Keep watching</button>`}</div>`;
   $("modal").classList.remove("hidden");

@@ -13,7 +13,7 @@ A grand strategy game of Europe on the eve of the Second World War, in the spiri
 - **Research:** industry, land, armor, doctrines and electronics, with a penalty for researching ahead of time.
 - **National focuses:** a shared tree plus extra national focuses for the five great powers.
 - **Units, each with its own icon and color:** Infantry, Anti-Tank, Light Tanks, Armored divisions, Fighters, Bombers and Battle Fleets. A legend sits on the map (toggle with `L`).
-- **Movement takes real time.** One game day takes 10 minutes at speed 1 (5 min at 2, 2.5 min at 3, 1 min at 4, 30 s at 5). Infantry needs about 25 seconds per province at speed 1. Research takes at most 42 game days (7 hours at speed 1). Moving units slide across the map, and every province on the route gets its own arrow that fills up as the unit crosses it.
+- **Movement takes real time.** One game day takes 10 minutes at speed 1 (5 min at 2, 2.5 min at 3, 1 min at 4, 30 s at 5, 15 s at 10, 6 s at 25). Infantry needs about 25 seconds per province at speed 1. Research takes at most 42 game days (7 hours at speed 1). Moving units slide across the map, and every province on the route gets its own arrow that fills up as the unit crosses it.
 - **Warfare:** terrain, forts, entrenchment, organization and strength, supply lines, retreats and encirclements. Anti-tank divisions blunt tank attacks. Fighters win air superiority, and bombers boost nearby battles. Fleets fight each other, bombard coastal battles and decide naval invasions.
 - **More land means more factories, gear and money.** Every province you control adds industry and daily income, and you can use the factories you capture. Money pays for every unit and building.
 - **Economy:** income comes from land and factories. Greece earns about $75k a day and Germany about $300k. Attacking without a war goal costs a $10,000 war tax.
@@ -32,9 +32,8 @@ A grand strategy game of Europe on the eve of the Second World War, in the spiri
 
 | Input | Action |
 |---|---|
-| Space | Cycle speed: paused → 1 → 2 → paused (→ 3 → 4 → 5 once unlocked) |
-| Unlocking speeds | Speeds 3–5 unlock on your device after you win by controlling the entire map |
-| 1–5 | Jump to a speed |
+| Space | Cycle speed: paused → 1 → 2 → 3 → 4 → 5 → 10 → 25 → paused |
+| 1–7 | Jump to a speed (6 = speed 10, 7 = speed 25) |
 | Right-drag / scroll | Move around the map and zoom (arrow keys also pan; right-click without dragging cancels) |
 | Click a counter, then click a province | Move or attack (right-click also works) |
 | Shift/Ctrl/⌘-click, Shift-drag | Add to selection / box-select |
