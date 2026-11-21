@@ -1,7 +1,7 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795222517";
-import { Game, dateStr } from "./sim.js?v=1795222517";
-import { runAI, aiAcceptsFaction } from "./ai.js?v=1795222517";
-import { MapView, drawUnitIcon } from "./render.js?v=1795222517";
+import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795222643";
+import { Game, dateStr } from "./sim.js?v=1795222643";
+import { runAI, aiAcceptsFaction } from "./ai.js?v=1795222643";
+import { MapView, drawUnitIcon } from "./render.js?v=1795222643";
 
 const $ = id => document.getElementById(id);
 const SPEEDS = [0, 2, 4, 8, 20, 60];
@@ -32,7 +32,7 @@ let battleLog = [], unread = 0, logFilter = "all", endShown = false, acc = 0, la
 const canvas = $("map");
 
 async function boot() {
-  const res = await fetch("data/map.json?v=1795222517");
+  const res = await fetch("data/map.json?v=1795222643");
   MAP = await res.json();
   const preview = new Game(MAP, { seed: 1 });
   view = new MapView(canvas, preview);
@@ -418,7 +418,8 @@ function onPanelClick(e) {
   else if (a === "selidle") { view.selected = new Set(game.divsOf(player).filter(d => !d.path.length).map(d => d.id)); showDivInfo(); }
   else if (a === "selair") { view.selected = new Set(game.divsOf(player, "air").map(d => d.id)); showDivInfo(); }
   else if (a === "selships") { view.selected = new Set(game.divsOf(player, "sea").map(d => d.id)); showDivInfo(); }
-  else if (a === "justify") { if (game.justify(player, el.dataset.t)) toast(`Justifying a war goal against ${COUNTRIES[el.dataset.t].name}…`); }
+  else if (a === "justify") { if (game.justify(player, el.dataset.t)) toast(`Justifying a war goal against ${COUNTRIES[el.dataset.t].name}…`); if (view.selProv) showProvInfo(view.selProv); }
+  else if (a === "forcewar") { if (game.forceWar(player, el.dataset.t)) { toast(`You declared war on ${COUNTRIES[el.dataset.t].name}!`, "war"); setSpeed(0); } else toast("You can't declare war on them right now."); }
   else if (a === "declare") { if (game.declareWar(player, el.dataset.t)) setSpeed(0); }
   else if (a === "guarantee") game.guarantee(player, el.dataset.t);
   else if (a === "join") {
@@ -472,6 +473,7 @@ function showProvInfo(p) {
   ${battleHtml(p)}
   <div class="acts">
     ${p.owner !== player ? `<button class="btn sm gold" data-act="dip" data-t="${p.owner}">Diplomacy with ${COUNTRIES[p.owner].name}…</button>` : ""}
+    ${p.owner !== player && !game.atWar(player, p.owner) && !game.friendly(player, p.owner) ? (game.c(player).wargoals[p.owner] ? "" : game.c(player).justifying?.target === p.owner ? `<span class="muted">Justifying: ${game.c(player).justifying.days} days left</span>` : `<button class="btn sm" data-act="justify" data-t="${p.owner}" ${game.canJustify(player, p.owner) ? "" : "disabled"}>Justify war goal</button>`) + `<button class="btn sm red" data-act="forcewar" data-t="${p.owner}">Declare war${game.c(player).wargoals[p.owner] ? "" : " ($10k tax)"}</button>` : ""}
     ${here.get(player) ? `<button class="btn sm" data-act="selprov" data-p="${p.id}">Select my units</button>` : ""}
     ${view.selected.size ? `<button class="btn sm gold" data-act="movehere" data-p="${p.id}">Move selected here</button>` : ""}
     ${own ? ["civ", "mil", "fort"].map(t => `<button class="btn sm" data-act="pbuild" data-type="${t}" data-p="${p.id}" ${game.canBuild(player, t, p.id) ? "" : "disabled"}>+ ${t === "civ" ? "Civilian" : t === "mil" ? "Military" : "Fort"}</button>`).join("") : ""}
@@ -508,6 +510,18 @@ function dipModal(t) {
       <label class="ck"><input type="checkbox" data-d="puppet" ${st.puppet ? "checked" : ""}> Make them your puppet</label>` : st.mode === "concede" ? `<div class="muted">They keep the ${lost} province${lost === 1 ? "" : "s"} they took from you.</div><label class="ck">Pay them gold: <input type="number" step="10000" min="0" value="${st.pgold}" data-d="pgold"> <span class="muted">(you have ${money(me.money)})</span></label>` : `<div class="muted">Everyone returns the land they took. War ends with a one-year truce.</div>`}
       <div class="dact"><button class="btn gold" data-d="send" data-type="peace">Send peace offer</button> ${pred("peace", peaceTerms)}</div>`);
   } else {
+    const wg = me.wargoals[t], jus = me.justifying;
+    const tax = (wg ? 0 : 10000) + (game.truce(player, t) ? 10000 : 0);
+    let warBody;
+    if (rel === "ally") warBody = `<div class="muted">${T.name} is your ally. Attacking them is a betrayal: you leave your side and join their enemies.</div><div class="dact"><button class="btn red" data-d="betray">Betray and declare war</button></div>`;
+    else {
+      const justRow = wg ? `<div>✓ You have a war goal against ${T.name}. Declaring war is free.</div>`
+        : jus && jus.target === t ? `<div>Justifying… <b>${jus.days}</b> of ${jus.total} days left <div class="bar"><i style="width:${Math.round(100 * (1 - jus.days / jus.total))}%"></i></div></div>`
+        : `<div class="dact"><button class="btn" data-d="justify" ${game.canJustify(player, t) ? "" : "disabled"}>Justify war goal</button> <span class="muted">${jus ? `Already justifying against ${COUNTRIES[jus.target].name}.` : me.pp < game.justifyCost(player) ? `Needs ${game.justifyCost(player)} political power (you have ${Math.floor(me.pp)}).` : `Costs ${game.justifyCost(player)} political power and takes ${Math.round(30 * (1 - game.mod(player, "justify")))} days. Then you can declare war with no war tax.`}</span></div>`;
+      const defenders = [...new Set([...(game.factionOf(t)?.members || []), ...game.puppetsOf(t)])].filter(x => x !== t && game.c(x).alive).map(x => COUNTRIES[x].name);
+      warBody = `${justRow}<div class="dact"><button class="btn red" data-d="declare">Declare war${tax ? ` (war tax ${money(tax)})` : ""}</button> <span class="muted">${tax ? (wg ? "" : "No war goal, so you pay the war tax. ") + (game.truce(player, t) ? "Breaks your truce (+$10,000). " : "") : ""}${defenders.length ? `Their allies join: ${defenders.slice(0, 6).join(", ")}${defenders.length > 6 ? "…" : ""}.` : ""}</span></div>`;
+    }
+    html += sec("War", warBody);
     html += sec("Alliance", k.kind === "none" ? `<div class="muted">${esc(k.text)}</div>` : `<div class="dact"><button class="btn" data-d="send" data-type="alliance">${esc(k.text)}</button> ${pred("alliance", {})}</div>`);
     if (rel !== "ally") {
       html += sec("Demand gold", `<label class="ck">Amount: <input type="number" step="10000" min="0" value="${st.gold}" data-d="gold"> <span class="muted">(they have ${money(T.money)})</span></label><div class="dact"><button class="btn" data-d="send" data-type="gold">Demand ${money(st.gold)}</button> ${pred("gold", { gold: st.gold })}</div>`);
@@ -524,6 +538,13 @@ function dipModal(t) {
     const d = b.dataset.d;
     if (d === "close") { closeDip(); return; }
     if (d === "mode") { st.mode = b.dataset.v; st.pgold = 0; dipModal(t); return; }
+    if (d === "justify") { if (game.justify(player, t)) toast(`Justifying a war goal against ${T.name}…`); updateHud(); dipModal(t); return; }
+    if (d === "declare") {
+      const ok = game.forceWar(player, t);
+      if (ok) { toast(`You declared war on ${T.name}!`, "war"); dipState.resume = 0; closeDip(); updateHud(); panelDay = -1; view.dirty = true; } else toast("You can't declare war on them right now.");
+      return;
+    }
+    if (d === "betray") { const myF = game.factionOf(player); game.betray(player, t); toast(`You betrayed ${myF ? "the " + myF.name : T.name} and declared war on ${T.name}!`, "war"); dipState.resume = 0; closeDip(); updateHud(); panelDay = -1; view.dirty = true; return; }
     if (d === "annex") { game.annexPuppet(player, t); closeDip(); return; }
     if (d === "release") { game.releasePuppet(player, t); closeDip(); return; }
     if (d === "send") {
