@@ -32,7 +32,8 @@ A grand strategy game of Europe on the eve of the Second World War, in the spiri
 
 | Input | Action |
 |---|---|
-| Space / 1–5 | Pause and game speed |
+| Space | Cycle speed: paused → 1 → 2 → 3 → 4 → 5 → paused |
+| 1–5 | Jump to a speed |
 | Drag / scroll | Pan and zoom (arrow keys also pan) |
 | Click a counter, then click a province | Move or attack (right-click also works) |
 | Shift-click / Shift-drag | Add to selection / box-select |
