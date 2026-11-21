@@ -1,6 +1,6 @@
-import { START_DATE, COUNTRIES, FACTIONS, TERRAIN, UNIT, BUILD, TECHS, GENERIC_FOCUS, NATIONAL_FOCUS, AIR_RANGE, TIER_MULT, TIER_COST, ROMAN, INCOME_SCALE, COST_SCALE, WAR_TAX } from "./data.js?v=1795220562";
+import { START_DATE, COUNTRIES, FACTIONS, TERRAIN, UNIT, BUILD, TECHS, GENERIC_FOCUS, NATIONAL_FOCUS, AIR_RANGE, TIER_MULT, TIER_COST, ROMAN, INCOME_SCALE, COST_SCALE, WAR_TAX } from "./data.js?v=1795220978";
 
-import { installDiplomacy } from "./diplo.js?v=1795220562";
+import { installDiplomacy } from "./diplo.js?v=1795220978";
 const DAY = 86400000;
 const HOUR = 3600000;
 const TECH = Object.fromEntries(TECHS.map(t => [t.id, t]));
@@ -266,7 +266,7 @@ export class Game {
   }
   isWinter(p) { const m = new Date(this.time).getUTCMonth(); return (m >= 10 || m <= 1) && p.c[1] < 820 && p.c[0] > 900; }
 
-  findPath(tag, type, from, to) {
+  findPath(tag, type, from, to, allowSea = true) {
     if (from === to) return [];
     const dist = new Map([[from, 0]]), prev = new Map(), done = new Set();
     const heap = [[0, from]];
@@ -281,6 +281,7 @@ export class Game {
       const p = this.P[id];
       for (let k = 0; k < p.adj.length + p.sea.length; k++) {
         const sea = k >= p.adj.length, n = sea ? p.sea[k - p.adj.length] : p.adj[k];
+        if (sea && !allowSea) break;
         if (done.has(n)) continue;
         const q = this.P[n];
         const r = this.relation(tag, q.ctrl);
@@ -333,7 +334,7 @@ export class Game {
       return path;
     }
     if (d.domain === "sea") return this.findSeaPath(d.tag, d.prov, target);
-    return this.findPath(d.tag, d.type, d.prov, target);
+    return this.findPath(d.tag, d.type, d.prov, target, false) || this.findPath(d.tag, d.type, d.prov, target, true);
   }
 
   orderMove(divIds, target) {
@@ -355,7 +356,7 @@ export class Game {
         if (sp) { d.path = sp; d.prog = 0; ok++; }
         continue;
       }
-      const path = this.findPath(d.tag, d.type, d.prov, target);
+      const path = this.computePath(d, target);
       if (path) { d.path = path; d.prog = 0; d.attacking = null; ok++; }
     }
     return ok;
