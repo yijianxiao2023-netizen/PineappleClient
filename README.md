@@ -48,7 +48,6 @@ docs/                  the game (served by GitHub Pages)
 tools/build_map.mjs    builds map.json from Natural Earth data (npm install && npm run build-map)
 ```
 
-Pushing to `main` deploys the `docs/` folder to GitHub Pages through `.github/workflows/pages.yml`.
-In the repo, **Settings → Pages → Source** must be set to **GitHub Actions**.
+GitHub Pages serves the repo root, and `index.html` there forwards to `docs/`, where the game lives. If you switch **Settings → Pages → Source** to **GitHub Actions**, run the `Deploy game to GitHub Pages` workflow by hand to publish `docs/` directly.
 
 Map data: Natural Earth, via the `world-atlas` package.
