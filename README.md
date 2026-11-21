@@ -74,3 +74,9 @@ Map data: Natural Earth, via the `world-atlas` package.
 - The sea is divided into water tiles (built by `tools/add_sea.mjs`). Fleets move only on water.
 - Select a fleet and press **Board nearby units** to load up to 3 land units within 3 tiles of it. Sail, press **Unload…**, then left-click a land tile within 3 tiles of the fleet to land them.
 - Land units can no longer cross water on their own. The AI ferries invasions with its fleets.
+
+## Bombers
+
+Select a bomber wing and left-click an enemy tile within its range (dashed circle, twice the fighter range). It flies there, bombs units (or factories and forts if the tile is empty) and returns to base. Enemy fighters near the target shoot back; your fighters nearby escort.
+
+When a fleet is selected, **Choose units to board…** lets you click exactly which units to load, on the map or in the list.

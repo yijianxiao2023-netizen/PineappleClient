@@ -1,6 +1,7 @@
-import { START_DATE, COUNTRIES, FACTIONS, TERRAIN, UNIT, BUILD, TECHS, GENERIC_FOCUS, NATIONAL_FOCUS, AIR_RANGE, TIER_MULT, TIER_COST, ROMAN, INCOME_SCALE, COST_SCALE, WAR_TAX } from "./data.js?v=1795234395";
+import { START_DATE, COUNTRIES, FACTIONS, TERRAIN, UNIT, BUILD, TECHS, GENERIC_FOCUS, NATIONAL_FOCUS, AIR_RANGE, TIER_MULT, TIER_COST, ROMAN, INCOME_SCALE, COST_SCALE, WAR_TAX } from "./data.js?v=1795235172";
 
-import { installDiplomacy } from "./diplo.js?v=1795234395";
+import { installDiplomacy } from "./diplo.js?v=1795235172";
+export const BOMB_RANGE = AIR_RANGE * 2;
 export const BOARD_RADIUS = 3;
 export const FLEET_CAPACITY = 3;
 const MOVE_DIV = 40;
@@ -604,7 +605,7 @@ export class Game {
     let F = 0, B = 0, S = 0;
     const list = [];
     for (const d of this.airList) {
-      if (!this.friendly(tag, d.tag)) continue;
+      if (!this.friendly(tag, d.tag) || d.sortie) continue;
       const q = this.T[d.prov];
       if (Math.hypot(q.c[0] - p.c[0], q.c[1] - p.c[1]) > AIR_RANGE) continue;
       if (d.type === "ftr") F += d.str * this.tm(d) * (1 + this.mod(d.tag, "ftr")); else B += d.str * this.tm(d) * (1 + this.mod(d.tag, "bmb"));
@@ -655,8 +656,66 @@ export class Game {
     }
   }
 
+  sortieHours(d) {
+    const s = d.sortie, a = this.T[d.prov], b = this.T[s.target];
+    return Math.max(0.05, UNIT[d.type].hours * Math.hypot(a.c[0] - b.c[0], a.c[1] - b.c[1]) / 38 / MOVE_DIV);
+  }
+  orderBomb(ids, target) {
+    const p = this.T[target];
+    let n = 0;
+    for (const id of ids) {
+      const d = this.divs.get(id);
+      if (!d || d.type !== "bmb" || d.sortie) continue;
+      const a = this.T[d.prov];
+      if (Math.hypot(a.c[0] - p.c[0], a.c[1] - p.c[1]) > BOMB_RANGE) continue;
+      d.path = []; d.prog = 0; d.sortie = { target, phase: "out", t: 0 }; n++;
+    }
+    return n;
+  }
+  bombRun(d, p) {
+    const enemyAt = [...p.divs, ...p.ships].map(i => this.divs.get(i)).filter(e => e && this.atWar(d.tag, e.tag));
+    const power = 0.07 * this.tm(d) * d.str * (1 + this.mod(d.tag, "bmb"));
+    let F = 0, E = 0;
+    for (const a of this.divs.values()) {
+      if (a.domain !== "air" || a.type !== "ftr" || a.sortie) continue;
+      const q = this.T[a.prov];
+      if (Math.hypot(q.c[0] - p.c[0], q.c[1] - p.c[1]) > AIR_RANGE) continue;
+      const w = a.str * this.tm(a) * (1 + this.mod(a.tag, "ftr"));
+      if (this.atWar(d.tag, a.tag)) F += w; else if (this.friendly(d.tag, a.tag)) E += w;
+    }
+    const loss = 0.12 * F / (F + E + 0.6);
+    d.str -= loss; d.mission = this.hourCount;
+    let what = "";
+    if (enemyAt.length) {
+      let killed = 0;
+      for (const e of enemyAt) {
+        e.str -= power / Math.sqrt(enemyAt.length); if (e.domain === "land") e.org = Math.max(0, e.org - 0.2);
+        if (e.str <= 0.05) { killed++; this.countries[e.tag].losses++; this.countries[d.tag].kills++; this.removeDiv(e); }
+      }
+      what = `hit ${enemyAt.length} unit${enemyAt.length > 1 ? "s" : ""}${killed ? ` and destroyed ${killed}` : ""}`;
+    } else if (this.atWar(d.tag, p.ctrl)) {
+      if (p.mil > 0 && this.rng() < 0.5) { p.mil--; what = "destroyed a military factory"; }
+      else if (p.civ > 0 && this.rng() < 0.5) { p.civ--; what = "destroyed a civilian factory"; }
+      else if (p.fort > 0) { p.fort--; what = "damaged the fortifications"; }
+      else what = "found no targets";
+      this.updateEconomyCache();
+    } else what = "found no targets";
+    const involved = d.tag === this.player || p.ctrl === this.player || enemyAt.some(e => e.tag === this.player);
+    if (involved) this.log(`${this.countries[d.tag].adj} bombers struck ${p.name}: ${what}${loss > 0.02 ? ` (enemy fighters hit them for ${Math.round(loss * 100)}%)` : ""}.`, "war", [d.tag, p.ctrl].filter(Boolean));
+    if (d.str <= 0.05) { this.countries[d.tag].losses++; this.removeDiv(d); if (involved) this.log(`A ${this.countries[d.tag].adj} bomber wing was shot down over ${p.name}.`, "war", [d.tag]); return false; }
+    return true;
+  }
+
   moveStep(dt) {
     if (dt <= 0) return;
+    for (const d of [...this.divs.values()]) {
+      if (!d.sortie || !this.divs.has(d.id)) continue;
+      const s = d.sortie;
+      s.t += dt / this.sortieHours(d);
+      if (s.t < 1) continue;
+      if (s.phase === "out") { if (this.bombRun(d, this.T[s.target])) { s.phase = "back"; s.t = 0; } }
+      else d.sortie = null;
+    }
     for (const d of this.divs.values()) {
       if (!d.path.length || d.attacking != null) continue;
       let budget = dt;

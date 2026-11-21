@@ -225,3 +225,8 @@ body.dockmin #info { bottom: 56px; max-height: calc(100vh - 140px); }
 @media (max-width: 760px) { #dock { width: calc(100vw - 80px); height: 30vh; } #info { bottom: calc(30vh + 22px); } }
 
 #speeds button.locked { opacity: .55; font-size: 11px; }
+
+.picklist { display: grid; gap: 2px; margin: 2px 0 4px; max-height: 190px; overflow: auto; }
+.pickrow { display: flex; align-items: center; gap: 5px; padding: 3px 6px; cursor: pointer; border: 1px solid #2a2e37; font-size: 12px; }
+.pickrow:hover { background: rgba(255,255,255,.05); } .pickrow.on { border-color: #6ff08a; background: rgba(111,240,138,.10); }
+.pickrow .muted { margin-left: auto; font-size: 10px; }

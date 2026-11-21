@@ -1,4 +1,4 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, AIR_RANGE, ROMAN } from "./data.js?v=1795234395";
+import { COUNTRIES, UNIT, UNIT_ORDER, AIR_RANGE, ROMAN } from "./data.js?v=1795235172";
 
 const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 const rgb = (c, k = 1, a = 1) => `rgba(${Math.round(c[0] * k)},${Math.round(c[1] * k)},${Math.round(c[2] * k)},${a})`;
@@ -259,7 +259,7 @@ export class MapView {
       ctx.lineWidth = 1.5; ctx.strokeStyle = pv.attack ? "#ffb0a4" : "#fff6cf"; ctx.stroke(); ctx.setLineDash([]);
     }
     const [lx, ly] = pts[pts.length - 1];
-    const label = pv.occupied && pv.many <= 1 ? "Tile occupied · LEFT-CLICK to go next to it" : `${pv.path.length} step${pv.path.length > 1 ? "s" : ""} · LEFT-CLICK to ${pv.attack ? "attack" : "move"}${pv.many > 1 ? ` (${pv.many} units spread out)` : ""}`;
+    const label = pv.bomb ? `LEFT-CLICK to bomb ${g.T[pv.to].name}` : pv.occupied && pv.many <= 1 ? "Tile occupied · LEFT-CLICK to go next to it" : `${pv.path.length} step${pv.path.length > 1 ? "s" : ""} · LEFT-CLICK to ${pv.attack ? "attack" : "move"}${pv.many > 1 ? ` (${pv.many} units spread out)` : ""}`;
     ctx.font = "700 12px Inter, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
     const tw = ctx.measureText(label).width + 12;
     ctx.fillStyle = "rgba(10,12,16,0.85)"; ctx.fillRect(lx - tw / 2, ly - 34, tw, 18);
@@ -270,6 +270,18 @@ export class MapView {
 
   drawPaths() {
     const ctx = this.ctx, g = this.g, frac = this.frac || 0;
+    for (const d of g.divs.values()) {
+      if (!d.sortie) continue;
+      const a = g.T[d.prov], b = g.T[d.sortie.target];
+      const [ax, ay] = this.toScreen(a.c[0], a.c[1]), [bx, by] = this.toScreen(b.c[0], b.c[1]);
+      if (Math.max(ax, bx) < -50 || Math.min(ax, bx) > this.vw + 50 || Math.max(ay, by) < -50 || Math.min(ay, by) > this.vh + 50) continue;
+      const mine = d.tag === g.player;
+      ctx.save(); ctx.setLineDash([6, 5]); ctx.lineWidth = mine ? 2 : 1.3;
+      ctx.strokeStyle = mine ? "rgba(200,150,255,0.9)" : g.player && g.atWar(d.tag, g.player) ? "rgba(255,110,90,0.8)" : "rgba(200,150,255,0.45)";
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(bx, by, 9, 0, Math.PI * 2); ctx.moveTo(bx - 13, by); ctx.lineTo(bx + 13, by); ctx.moveTo(bx, by - 13); ctx.lineTo(bx, by + 13); ctx.stroke();
+      ctx.restore();
+    }
     const seen = new Set();
     const list = [];
     for (const d of g.divs.values()) {
@@ -332,6 +344,10 @@ export class MapView {
 
   unitPos(d, frac) {
     const g = this.g, a = g.T[d.prov];
+    if (d.sortie) {
+      const b = g.T[d.sortie.target], t = Math.min(1, d.sortie.t), k = d.sortie.phase === "out" ? t : 1 - t;
+      return { x: a.c[0] + (b.c[0] - a.c[0]) * k, y: a.c[1] + (b.c[1] - a.c[1]) * k, moving: true, to: b.id };
+    }
     if (!d.path.length || d.attacking != null) return { x: a.c[0], y: a.c[1], moving: false };
     const b = g.T[d.path[0].id];
     const leg = g.legHours(d, d.prov, b.id, d.path[0].sea);
@@ -386,7 +402,7 @@ export class MapView {
       if (!d || d.domain !== "air") continue;
       const p = g.T[d.prov];
       const [x, y] = this.toScreen(p.c[0], p.c[1]);
-      ctx.beginPath(); ctx.arc(x, y, AIR_RANGE * s, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(x, y, (d.type === "bmb" ? AIR_RANGE * 2 : AIR_RANGE) * s, 0, Math.PI * 2);
       ctx.strokeStyle = "rgba(108,200,242,0.6)"; ctx.setLineDash([6, 5]); ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
       break;
     }
@@ -399,6 +415,7 @@ export class MapView {
     const u = UNIT[gp.type];
     const col = hex(COUNTRIES[gp.tag].color);
     const sel = gp.ds.some(d => this.selected.has(d.id));
+    const picked = this.picks && gp.ds.some(d => this.picks.has(d.id));
     const rel = gp.tag === g.player ? "self" : g.relation(g.player, gp.tag);
     ctx.globalAlpha = moving ? 0.92 : 1;
     ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(x + 2, y + 2, w, h);
@@ -422,6 +439,7 @@ export class MapView {
     ctx.lineWidth = sel ? 2.5 : 1.2;
     ctx.strokeStyle = sel ? "#ffe27a" : rel === "enemy" ? "#ff4a3d" : rel === "self" ? "#f1f1f1" : rel === "ally" ? "#7fd4ff" : "#222";
     ctx.strokeRect(x, y, w, h);
+    if (picked) { ctx.lineWidth = 3; ctx.strokeStyle = "#6ff08a"; ctx.strokeRect(x - 2, y - 2, w + 4, h + 4); ctx.fillStyle = "#6ff08a"; ctx.font = "800 11px Inter, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.fillText("✓", x + w + 6, y + 4); ctx.textAlign = "left"; }
     const str = gp.ds.reduce((a, d) => a + d.str, 0) / gp.ds.length;
     const org = gp.ds.reduce((a, d) => a + d.org, 0) / gp.ds.length;
     ctx.fillStyle = "#111"; ctx.fillRect(x, y + h, w, u.domain === "land" ? 6 : 4);
