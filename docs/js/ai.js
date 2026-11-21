@@ -1,4 +1,4 @@
-import { TECHS, UNIT } from "./data.js?v=1795223937";
+import { TECHS, UNIT } from "./data.js?v=1795224029";
 
 const TECH_ORDER = ["tools1", "constr1", "housing1", "infwep1", "inf_t2", "arty1", "DOCTRINE", "tank1", "bomber1", "radio", "ftr_t2", "housing2", "suppwep", "at1", "tools2", "constr2", "inf_t3", "tank_t2", "ftr2", "motor", "infwep2", "tank2", "at_t2", "bmb_t2", "housing3", "concind", "logistics", "arm_t2", "inf_t4", "cas", "ftr_t3", "tank_t3", "ship_t2", "arty2", "doc2", "at_t3", "radar", "housing4", "constr3", "arm_t3", "inf_t5", "ftr3", "bmb_t3", "tools3", "tank3", "tank_t4", "ftr_t4", "housing5", "arm_t4", "infwep3", "ship_t3", "naval1", "tank_rel", "bmb2", "naval2", "tank_gun", "escort", "subs", "dive", "blitz", "mech", "naval3", "carrier", "bmb_heavy", "tank_sup", "jet"];
 const DOCTRINE = { GER: "doc_mobile", SOV: "doc_mass", FRA: "doc_plan", ENG: "doc_fire", ITA: "doc_fire" };
