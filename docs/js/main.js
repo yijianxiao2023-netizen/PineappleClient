@@ -1,7 +1,7 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795220978";
-import { Game, dateStr } from "./sim.js?v=1795220978";
-import { runAI, aiAcceptsFaction } from "./ai.js?v=1795220978";
-import { MapView, drawUnitIcon } from "./render.js?v=1795220978";
+import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795221400";
+import { Game, dateStr } from "./sim.js?v=1795221400";
+import { runAI, aiAcceptsFaction } from "./ai.js?v=1795221400";
+import { MapView, drawUnitIcon } from "./render.js?v=1795221400";
 
 const $ = id => document.getElementById(id);
 const SPEEDS = [0, 2, 4, 8, 20, 60];
@@ -32,7 +32,7 @@ let battleLog = [], unread = 0, logFilter = "all", endShown = false, acc = 0, la
 const canvas = $("map");
 
 async function boot() {
-  const res = await fetch("data/map.json?v=1795220978");
+  const res = await fetch("data/map.json?v=1795221400");
   MAP = await res.json();
   const preview = new Game(MAP, { seed: 1 });
   view = new MapView(canvas, preview);
@@ -306,7 +306,7 @@ function renderArmy() {
     <button class="btn" data-act="selidle">Select idle land units</button>
     <button class="btn" data-act="selair">Select all aircraft</button>
     <button class="btn" data-act="selships">Select all fleets</button>
-  </div><p class="muted" style="line-height:1.5">Click a counter to select it, or Shift-drag to box-select. Then <b>click</b> (or right-click) a province to move or attack. Aircraft fly to any friendly province and support battles within the dashed circle. Fleets sail between friendly ports.</p></div>`;
+  </div><p class="muted" style="line-height:1.5">Click a counter to select it, or Shift-drag to box-select. Then hover over a destination and <b>left-click</b> to move or attack. Right-click cancels. Aircraft fly to any friendly province and support battles within the dashed circle. Fleets sail between friendly ports.</p></div>`;
 }
 
 function renderDiplomacy() {
@@ -346,7 +346,7 @@ function renderHelp() {
   <h4>Controls</h4><ul>
     <li><kbd>Space</kbd> pause or unpause, <kbd>1</kbd>–<kbd>5</kbd> game speed.</li>
     <li>Drag to pan, scroll to zoom. The arrow keys also pan.</li>
-    <li><b>Click a unit</b> to select it, then <b>click a province</b> to send it there. Right-click works too. <kbd>Shift</kbd>-click adds more units, <kbd>Shift</kbd>-drag box-selects, and clicking the sea deselects.</li>
+    <li><b>Click your unit</b> (or anywhere in a province where you have units) to select it. Hover over where you want to go, then <b>left-click</b> to send it there. Right-click cancels. <kbd>Shift</kbd>-click adds more units, <kbd>Shift</kbd>-drag box-selects, and clicking the sea deselects.</li>
     <li>You never have to click each province. Select a unit, <b>hover</b> over any destination to preview the fastest route (dashed arrows), then <b>left-click once</b> and it walks the whole way. Nothing moves until you click.</li>
     <li>Land units only walk over land. They cross the sea only when there is no land route at all (for example, Britain to France).</li>
     <li>Attacking a country you have no war goal against costs a <b>$10,000 war tax</b>. Betraying allies costs the same.</li>
@@ -362,7 +362,7 @@ function renderHelp() {
     <li>Manpower grows every second. Research <b>Housing I to V</b> (+25% each) and conquer land to grow it faster.</li>
     <li>Open the <b>Battle Log</b> (<kbd>B</kbd>) to see everything the AI does: research, war-goal justifications, declarations of war and capitulations.</li></ul>
   <h4>Attacking &amp; betrayal</h4><ul>
-    <li>Send your units onto <b>any</b> other country's land or units to attack them. If you aren't already at war, you'll be asked to confirm, and then war is declared on them and their whole faction.</li>
+    <li>Send your units onto <b>any</b> other country's land or units to attack them straight away. No justifying or declaring is needed. Their whole faction will fight back, and you pay a $10,000 war tax.</li>
     <li>Every province you take <b>becomes yours</b> and turns your color. It gives you its factories, income and industry.</li>
     <li>Hover over any counter to see each unit's health bar (soldiers left). Click a battle's province to see both sides.</li>
     <li><b>Diplomacy…</b> (Diplomacy panel, or click a foreign province): propose alliances, demand gold, territory or puppets, and send peace treaties that demand gold or land. The AI does the same to each other and to you, and a popup lets you accept or refuse.</li>
@@ -573,8 +573,17 @@ function battleHtml(p) {
     <div class="grid2"><div>${side(attackers)}</div><div>${side(defenders)}</div></div></div>`;
 }
 
+function updateMoveHint() {
+  const h = $("moveHint");
+  if (!h) return;
+  const n = game ? [...view.selected].filter(i => game.divs.get(i)).length : 0;
+  h.classList.toggle("hidden", !n);
+  if (n) h.innerHTML = `<b>${n} unit${n > 1 ? "s" : ""} selected.</b> Hover over where you want to go, then <b>LEFT-CLICK</b> to move. <span class="muted">Right-click or Esc cancels.</span>`;
+}
+
 function showDivInfo() {
   updatePreview();
+  updateMoveHint();
   const el = $("info");
   const ds = [...view.selected].map(i => game.divs.get(i)).filter(Boolean);
   view.selected = new Set(ds.map(d => d.id));
@@ -615,7 +624,8 @@ function updatePreview() {
 }
 
 function finishOrder(p) {
-  if (moveSelected(p)) { view.selected.clear(); $("info").classList.add("hidden"); view.selProv = null; }
+  if (moveSelected(p)) { view.selected.clear(); view.preview = null; $("info").classList.add("hidden"); view.selProv = null; }
+  updateMoveHint();
   view.dirty = true;
 }
 
@@ -626,18 +636,17 @@ function orderWithDiplomacy(p, clickedTag) {
   const rel = game.relation(player, target);
   const T = game.c(target);
   if (rel === "neutral") {
-    const tf = game.factionOf(target);
-    confirmBox(`Attack ${T.name}?`, `This declares war on <b>${T.name}</b>${tf ? ` and the whole <b>${esc(tf.name)}</b> (${[...tf.members].filter(m => m !== target).map(m => COUNTRIES[m].name).join(", ") || "no one else"})` : ""}. They will fight back.`, "Declare war & attack", "red", () => {
-      game.forceWar(player, target); finishOrder(p); panelDay = -1;
-    });
+    const taxed = !game.c(player).wargoals[target];
+    game.forceWar(player, target);
+    toast(`Attacking ${T.name}!${taxed ? ` (war tax ${money(10000)})` : ""}`, "war");
+    finishOrder(p); panelDay = -1; updateHud();
     return;
   }
   if (rel === "ally" && T.overlord !== player) {
     const myF = game.factionOf(player);
-    const rival = game.rivalFaction(myF || game.factionOf(target));
-    confirmBox(`Betray ${myF ? "the " + myF.name : T.name}?`, `Moving into <b>${T.name}</b>'s territory is an attack on your ally. No war goal or justification is needed, but it costs the $10,000 war tax. You will <b>leave the ${esc(myF ? myF.name : "alliance")}</b> and join <b>${rival ? "the " + esc(rival.name) : "a new faction of your own"}</b> for the rest of this match. Every former ally will be at war with you.`, "Betray them", "red", () => {
-      game.betray(player, target); finishOrder(p); panelDay = -1; updateHud();
-    });
+    game.betray(player, target);
+    toast(`You betrayed ${myF ? "the " + myF.name : T.name} and attacked ${T.name}! You are now in the ${game.factionOf(player)?.name || "your own faction"}.`, "war");
+    finishOrder(p); panelDay = -1; updateHud();
     return;
   }
   finishOrder(p);
@@ -676,7 +685,7 @@ canvas.addEventListener("pointermove", e => {
     view.zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, d / pinch.d); pinch.d = d; return;
   }
   if (down) {
-    if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) down.moved = true;
+    if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 10) down.moved = true;
     if (view.box) { view.box.x1 = e.clientX; view.box.y1 = e.clientY; view.dirty = true; }
     else if (down.moved && down.btn === 0) { view.ox = down.ox + e.clientX - down.x; view.oy = down.oy + e.clientY - down.y; view.clamp(); view.dirty = true; }
   } else if (e.pointerType === "mouse") {
@@ -718,9 +727,7 @@ canvas.addEventListener("contextmenu", e => {
   e.preventDefault();
   if (!game) return;
   if (view.buildMode) { setBuildMode(null); return; }
-  const p = view.provAt(e.clientX, e.clientY);
-  const ctr = view.countersAt(e.clientX, e.clientY);
-  if (p && view.selected.size) orderWithDiplomacy(p, ctr && ctr.tag !== player ? ctr.tag : null);
+  if (view.selected.size) { view.selected.clear(); view.preview = null; $("info").classList.add("hidden"); view.dirty = true; updateMoveHint(); }
 });
 canvas.addEventListener("wheel", e => { e.preventDefault(); view.zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
 
@@ -750,6 +757,14 @@ function handleClick(x, y, shift, ptype) {
     return;
   }
   if (!shift) view.selected.clear();
+  if (p) {
+    const mine = [...p.divs, ...p.air, ...p.ships].map(i => game.divs.get(i)).filter(d => d && d.tag === player);
+    const land = mine.filter(d => d.domain === "land");
+    if (mine.length) {
+      for (const d of (land.length ? land : mine)) view.selected.add(d.id);
+      view.selProv = null; showDivInfo(); view.dirty = true; return;
+    }
+  }
   view.selProv = p;
   if (p) showProvInfo(p); else $("info").classList.add("hidden");
   view.dirty = true;
@@ -769,7 +784,7 @@ addEventListener("keydown", e => {
   else if (k === "b") openTab(tab === "battlelog" ? null : "battlelog");
   else if (k === "m") toggleMode();
   else if (k === "l") $("legend").classList.toggle("hidden");
-  else if (k === "escape") { if (view.buildMode) setBuildMode(null); else if (view.selected.size) { view.selected.clear(); $("info").classList.add("hidden"); } else openTab(null); view.dirty = true; }
+  else if (k === "escape") { if (view.buildMode) setBuildMode(null); else if (view.selected.size) { view.selected.clear(); view.preview = null; $("info").classList.add("hidden"); updateMoveHint(); } else openTab(null); view.dirty = true; }
   else if (k === "+" || k === "=") view.zoomAt(view.vw / 2, view.vh / 2, 1.25);
   else if (k === "-") view.zoomAt(view.vw / 2, view.vh / 2, 0.8);
   if (["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) { e.preventDefault(); panKeys.add(k); }
