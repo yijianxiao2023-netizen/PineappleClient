@@ -1,4 +1,4 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, AIR_RANGE, ROMAN } from "./data.js?v=1795222643";
+import { COUNTRIES, UNIT, UNIT_ORDER, AIR_RANGE, ROMAN } from "./data.js?v=1795222749";
 
 const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 const rgb = (c, k = 1, a = 1) => `rgba(${Math.round(c[0] * k)},${Math.round(c[1] * k)},${Math.round(c[2] * k)},${a})`;
@@ -268,18 +268,24 @@ export class MapView {
     const seen = new Set();
     const list = [];
     for (const d of g.divs.values()) {
-      if (!d.path.length || d.tag !== g.player) continue;
+      if (!d.path.length) continue;
       const key = d.prov + ":" + d.path.map(s => s.id).join(",");
       if (seen.has(key)) continue; seen.add(key);
       list.push(d);
     }
-    list.sort((a, b) => (this.selected.has(a.id) ? 1 : 0) - (this.selected.has(b.id) ? 1 : 0));
+    const W = this.vw, H = this.vh;
+    list.sort((a, b) => (a.tag === g.player ? 1 : 0) - (b.tag === g.player ? 1 : 0) || (this.selected.has(a.id) ? 1 : 0) - (this.selected.has(b.id) ? 1 : 0));
     for (const d of list) {
       const sel = this.selected.has(d.id);
+      const ai = d.tag !== g.player;
+      const k = ai ? 0.62 : 1;
+      if (ai) { const [qx, qy] = this.toScreen(g.P[d.prov].c[0], g.P[d.prov].c[1]); if (qx < -300 || qy < -300 || qx > W + 300 || qy > H + 300) continue; }
+      const cc = hex(COUNTRIES[d.tag].color);
+      const hostileToMe = ai && g.player && g.atWar(d.tag, g.player);
       const pts = [g.P[d.prov].c, ...d.path.map(s => g.P[s.id].c)].map(c => this.toScreen(c[0], c[1]));
       const leg = g.legHours(d, d.prov, d.path[0].id, d.path[0].sea);
       const done0 = d.attacking != null ? 0 : Math.max(0, Math.min(1, (d.prog + frac) / leg));
-      const fillCol = d.attacking != null ? "#ff5a48" : sel ? "#ffe27a" : "#8be07a";
+      const fillCol = d.attacking != null ? "#ff5a48" : sel ? "#ffe27a" : ai ? rgb(cc, 1, 0.95) : "#8be07a";
       for (let i = 0; i < pts.length - 1; i++) {
         const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
         const len = Math.hypot(bx - ax, by - ay);
@@ -288,9 +294,9 @@ export class MapView {
         const gap = Math.min(7, len * 0.15);
         const sx = ax + ux * gap, sy = ay + uy * gap, ex = bx - ux * gap, ey = by - uy * gap;
         const segLen = Math.hypot(ex - sx, ey - sy);
-        const head = Math.min(18, segLen * 0.5), shaft = Math.max(0, segLen - head);
+        const head = Math.min(18 * k, segLen * 0.5), shaft = Math.max(0, segLen - head);
         const hx = sx + ux * shaft, hy = sy + uy * shaft;
-        const nx = -uy, ny = ux, w = 5.5, hw = 12;
+        const nx = -uy, ny = ux, w = 5.5 * k, hw = 12 * k;
         const arrow = () => {
           ctx.beginPath();
           ctx.moveTo(sx + nx * w, sy + ny * w); ctx.lineTo(hx + nx * w, hy + ny * w); ctx.lineTo(hx + nx * hw, hy + ny * hw);
@@ -299,7 +305,7 @@ export class MapView {
         };
         arrow();
         ctx.fillStyle = "rgba(10,12,16,0.7)"; ctx.fill();
-        ctx.lineWidth = 2; ctx.strokeStyle = sel ? "#ffe27a" : "rgba(255,255,255,0.9)"; ctx.stroke();
+        ctx.lineWidth = ai ? 1.6 : 2; ctx.strokeStyle = sel ? "#ffe27a" : ai ? (hostileToMe ? "#ff6b5c" : rgb(cc, 1.25, 0.95)) : "rgba(255,255,255,0.9)"; ctx.stroke();
         const f = i === 0 ? done0 : 0;
         if (f > 0) {
           const cut = segLen * f;
