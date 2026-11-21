@@ -1,6 +1,6 @@
 import { TECHS, UNIT } from "./data.js";
 
-const TECH_ORDER = ["tools1", "constr1", "infwep1", "arty1", "DOCTRINE", "tank1", "bomber1", "radio", "suppwep", "at1", "tools2", "constr2", "ftr2", "motor", "infwep2", "tank2", "concind", "logistics", "cas", "arty2", "doc2", "radar", "constr3", "ftr3", "tools3", "tank3", "infwep3"];
+const TECH_ORDER = ["tools1", "constr1", "housing1", "infwep1", "inf_t2", "arty1", "DOCTRINE", "tank1", "bomber1", "radio", "ftr_t2", "housing2", "suppwep", "at1", "tools2", "constr2", "inf_t3", "tank_t2", "ftr2", "motor", "infwep2", "tank2", "at_t2", "bmb_t2", "housing3", "concind", "logistics", "arm_t2", "inf_t4", "cas", "ftr_t3", "tank_t3", "ship_t2", "arty2", "doc2", "at_t3", "radar", "housing4", "constr3", "arm_t3", "inf_t5", "ftr3", "bmb_t3", "tools3", "tank3", "tank_t4", "ftr_t4", "housing5", "arm_t4", "infwep3", "ship_t3"];
 const DOCTRINE = { GER: "doc_mobile", SOV: "doc_mass", FRA: "doc_plan", ENG: "doc_fire", ITA: "doc_fire" };
 const FOCUS_ORDER = ["industry", "construction", "rearm", "production", "research", "army", "equip", "political", "conscription", "doctrine", "warprop", "alliance", "fleet", "fortify"];
 const shuffleFocus = (g, list) => { const a = [...list]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(g.rng() * (i + 1)); if (g.rng() < 0.35) [a[i], a[j]] = [a[j], a[i]]; } return a; };
@@ -22,7 +22,7 @@ function economy(g, c) {
       const t = TECHS.find(x => x.id === tid);
       if (t && g.techAvailable(c, t)) { g.setResearch(c.tag, i, tid); break; }
     }
-    if (!c.research[i]) { const t = TECHS.find(x => g.techAvailable(c, x)); if (t) g.setResearch(c.tag, i, t.id); }
+    if (!c.research[i]) { const t = TECHS.filter(x => g.techAvailable(c, x)).sort((a, b) => a.year - b.year)[0]; if (t) g.setResearch(c.tag, i, t.id); }
   }
 
   if (!c.focus) {
@@ -55,6 +55,7 @@ function economy(g, c) {
     }
   }
 
+  if ((Math.floor(g.hourCount / 24) + hash(c.tag)) % 30 === 0) for (const t of ["inf", "at", "tank", "arm", "ftr", "bmb", "ship"]) if (c.money > (c.upkeep || 0) * 40) g.upgradeUnits(c.tag, t, 20);
   c.share.tank = c.techs.has("tank1") ? (c.tag === "GER" ? 0.3 : c.major ? 0.2 : 0.08) : 0;
   c.share.air = c.major ? 0.15 : 0.08;
 
@@ -77,7 +78,7 @@ function economy(g, c) {
     if (count("ftr") < ftrWant) wants.unshift(["ftr", 1]);
     if (c.major && count("bmb") < Math.ceil(ftrWant / 2)) wants.splice(1, 0, ["bmb", 1]);
     if (count("ship") < fleets && c.money > 2500) wants.push(["ship", 1]);
-    const pick = wants.find(([t]) => g.canTrain(c.tag, t));
+    const pick = wants.find(([t]) => g.canTrain(c.tag, t) && c.money - g.unitCost(c.tag, t).money > (c.upkeep || 0) * 25 && (c.income + c.civEff * 1.5) - (c.upkeep || 0) > g.unitCost(c.tag, t).upkeep);
     if (!pick) break;
     g.train(c.tag, pick[0]); made++;
   }
