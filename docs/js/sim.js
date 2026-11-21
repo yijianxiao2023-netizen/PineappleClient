@@ -1,6 +1,6 @@
-import { START_DATE, COUNTRIES, FACTIONS, TERRAIN, UNIT, BUILD, TECHS, GENERIC_FOCUS, NATIONAL_FOCUS, AIR_RANGE, TIER_MULT, TIER_COST, ROMAN, INCOME_SCALE, COST_SCALE, WAR_TAX } from "./data.js?v=1795223247";
+import { START_DATE, COUNTRIES, FACTIONS, TERRAIN, UNIT, BUILD, TECHS, GENERIC_FOCUS, NATIONAL_FOCUS, AIR_RANGE, TIER_MULT, TIER_COST, ROMAN, INCOME_SCALE, COST_SCALE, WAR_TAX } from "./data.js?v=1795223430";
 
-import { installDiplomacy } from "./diplo.js?v=1795223247";
+import { installDiplomacy } from "./diplo.js?v=1795223430";
 const DAY = 86400000;
 const HOUR = 3600000;
 const TECH = Object.fromEntries(TECHS.map(t => [t.id, t]));
@@ -571,9 +571,8 @@ export class Game {
       }
       d.attacking = null;
       if (d.path.length === 1 && this.occupiedBy(next.id, d.tag, "land", d.id)) {
-        const alt = d.tag === this.player ? null : this.freeTilesNear(d.tag, next.id, "land", 1, d.id)[0];
+        const alt = this.freeTilesNear(d.tag, next.id, "land", 1, d.id)[0];
         const np = alt ? this.computePath(d, alt.id) : null;
-        if (d.tag === this.player) this.log(`Your ${UNIT[d.type].name} stopped in ${this.P[d.prov].name}: ${next.name} is already occupied.`, "army", [d.tag]);
         if (np && np.length) { d.path = np; d.prog = 0; } else { d.path = []; d.prog = 0; }
         continue;
       }
@@ -677,7 +676,7 @@ export class Game {
       for (const domain of ["land", "air", "sea"]) {
         const set = this.setOf(p, domain);
         if (set.size < 2) continue;
-        const us = [...set].map(i => this.divs.get(i)).filter(d => d && !d.path.length && d.attacking == null && d.tag !== this.player);
+        const us = [...set].map(i => this.divs.get(i)).filter(d => d && !d.path.length && d.attacking == null);
         if (us.length < 2 && set.size - us.length < 1) continue;
         const keep = set.size - us.length > 0 ? 0 : 1;
         for (const d of us.slice(keep)) {
@@ -992,7 +991,7 @@ export class Game {
     this.mapVersion++;
     this.log(`${K.name} captured ${capital ? capital.name : "the capital"}! ${c.name} has fallen: all ${n + 1} of its provinces now belong to ${K.name}, and its ${lost} units have been disbanded.`, "major", [conqueror, c.tag]);
     this.killCountry(c);
-    for (const d of [...this.divs.values()]) { const q = this.P[d.prov]; if (!this.friendly(d.tag, q.ctrl) && d.domain === "land" && d.tag !== conqueror && d.tag !== this.player && !this.atWar(d.tag, q.ctrl)) { const cap = this.P[this.countries[d.tag].capital]; if (cap && cap.ctrl === d.tag) this.moveDivTo(d, cap.id); } }
+    for (const d of [...this.divs.values()]) { const q = this.P[d.prov]; if (!this.friendly(d.tag, q.ctrl) && d.domain === "land" && d.tag !== conqueror && !this.atWar(d.tag, q.ctrl)) { const cap = this.P[this.countries[d.tag].capital]; if (cap && cap.ctrl === d.tag) this.moveDivTo(d, cap.id); } }
     this.updateEconomyCache(); this.computeSupply();
     if (this.player && conqueror === this.player) this.log(`You now own all of ${c.name}'s land, factories and income.`, "army", [conqueror]);
   }
