@@ -1,4 +1,4 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, AIR_RANGE, ROMAN } from "./data.js?v=1795221651";
+import { COUNTRIES, UNIT, UNIT_ORDER, AIR_RANGE, ROMAN } from "./data.js?v=1795222517";
 
 const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 const rgb = (c, k = 1, a = 1) => `rgba(${Math.round(c[0] * k)},${Math.round(c[1] * k)},${Math.round(c[2] * k)},${a})`;
@@ -254,7 +254,7 @@ export class MapView {
       ctx.lineWidth = 1.5; ctx.strokeStyle = pv.attack ? "#ffb0a4" : "#fff6cf"; ctx.stroke(); ctx.setLineDash([]);
     }
     const [lx, ly] = pts[pts.length - 1];
-    const label = `${pv.path.length} step${pv.path.length > 1 ? "s" : ""} · LEFT-CLICK to ${pv.attack ? "attack" : "move"}`;
+    const label = pv.occupied && pv.many <= 1 ? "Tile occupied · LEFT-CLICK to go next to it" : `${pv.path.length} step${pv.path.length > 1 ? "s" : ""} · LEFT-CLICK to ${pv.attack ? "attack" : "move"}${pv.many > 1 ? ` (${pv.many} units spread out)` : ""}`;
     ctx.font = "700 12px Inter, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
     const tw = ctx.measureText(label).width + 12;
     ctx.fillStyle = "rgba(10,12,16,0.85)"; ctx.fillRect(lx - tw / 2, ly - 34, tw, 18);

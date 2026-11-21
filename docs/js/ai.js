@@ -1,13 +1,49 @@
-import { TECHS, UNIT } from "./data.js?v=1795221651";
+import { TECHS, UNIT } from "./data.js?v=1795222517";
 
-const TECH_ORDER = ["tools1", "constr1", "housing1", "infwep1", "inf_t2", "arty1", "DOCTRINE", "tank1", "bomber1", "radio", "ftr_t2", "housing2", "suppwep", "at1", "tools2", "constr2", "inf_t3", "tank_t2", "ftr2", "motor", "infwep2", "tank2", "at_t2", "bmb_t2", "housing3", "concind", "logistics", "arm_t2", "inf_t4", "cas", "ftr_t3", "tank_t3", "ship_t2", "arty2", "doc2", "at_t3", "radar", "housing4", "constr3", "arm_t3", "inf_t5", "ftr3", "bmb_t3", "tools3", "tank3", "tank_t4", "ftr_t4", "housing5", "arm_t4", "infwep3", "ship_t3"];
+const TECH_ORDER = ["tools1", "constr1", "housing1", "infwep1", "inf_t2", "arty1", "DOCTRINE", "tank1", "bomber1", "radio", "ftr_t2", "housing2", "suppwep", "at1", "tools2", "constr2", "inf_t3", "tank_t2", "ftr2", "motor", "infwep2", "tank2", "at_t2", "bmb_t2", "housing3", "concind", "logistics", "arm_t2", "inf_t4", "cas", "ftr_t3", "tank_t3", "ship_t2", "arty2", "doc2", "at_t3", "radar", "housing4", "constr3", "arm_t3", "inf_t5", "ftr3", "bmb_t3", "tools3", "tank3", "tank_t4", "ftr_t4", "housing5", "arm_t4", "infwep3", "ship_t3", "naval1", "tank_rel", "bmb2", "naval2", "tank_gun", "escort", "subs", "dive", "blitz", "mech", "naval3", "carrier", "bmb_heavy", "tank_sup", "jet"];
 const DOCTRINE = { GER: "doc_mobile", SOV: "doc_mass", FRA: "doc_plan", ENG: "doc_fire", ITA: "doc_fire" };
 const FOCUS_ORDER = ["industry", "construction", "rearm", "production", "research", "army", "equip", "political", "conscription", "doctrine", "warprop", "alliance", "fleet", "fortify"];
 const shuffleFocus = (g, list) => { const a = [...list]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(g.rng() * (i + 1)); if (g.rng() < 0.35) [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const hash = s => [...s].reduce((a, ch) => a * 31 + ch.charCodeAt(0), 7) >>> 0;
 
+const STRATS = {
+  blitz: { name: "Blitzkrieg", odds: 1.1, desc: "fast armored breakthroughs, attacking at narrow odds" },
+  balanced: { name: "Broad Front", odds: 1.35, desc: "steady pressure along the whole front" },
+  defensive: { name: "Defense in Depth", odds: 1.7, desc: "holding the line and striking only with overwhelming odds" },
+  encircle: { name: "Encirclement", odds: 1.25, desc: "pincer attacks to cut off and surround enemy pockets" },
+  attrition: { name: "Attrition", odds: 1.2, desc: "wearing the enemy down with rested troops" },
+};
+function strategyOf(g, c) {
+  if (!c.strategy) {
+    const pool = c.ideology === "fascist" ? ["blitz", "blitz", "encircle", "balanced"] : c.ideology === "communist" ? ["attrition", "attrition", "balanced", "encircle"] : ["defensive", "balanced", "balanced", "encircle", "attrition"];
+    c.strategy = pool[Math.floor(g.rng() * pool.length)];
+    if (c.major && c.tag !== g.player) g.log(`${c.name} adopts a ${STRATS[c.strategy].name} strategy: ${STRATS[c.strategy].desc}.`, "justify", [c.tag]);
+  }
+  return STRATS[c.strategy];
+}
+function coalition(g, tag) { return Object.values(g.countries).filter(o => o.alive && (o.tag === tag || g.friendly(tag, o.tag))); }
+function objectiveOf(g, c, day) {
+  const team = coalition(g, c.tag).sort((a, b) => g.power(b.tag) - g.power(a.tag));
+  const lead = team[0];
+  if (!lead.objective || lead.objectiveDay + 30 <= day || !g.atWar(lead.tag, g.P[lead.objective]?.ctrl)) {
+    const myCap = g.P[lead.capital] || g.P.find(p => p.ctrl === lead.tag);
+    let best = null, bd = 1e9;
+    for (const e of g.enemiesOf(c.tag)) {
+      const ec = g.c(e); const cap = g.P[ec.capital];
+      if (!cap || !g.atWar(c.tag, cap.ctrl) || !myCap) continue;
+      const d = Math.hypot(cap.c[0] - myCap.c[0], cap.c[1] - myCap.c[1]) / (1 + (ec.major ? 0.5 : 0));
+      if (d < bd) { bd = d; best = cap; }
+    }
+    const was = lead.objective;
+    lead.objective = best ? best.id : null; lead.objectiveDay = day;
+    if (best && was !== best.id && team.length > 1 && lead.tag !== g.player) g.log(`${lead.name} and its allies coordinate a joint offensive toward ${best.name} (${g.c(best.ctrl).name}).`, "war", team.map(t => t.tag).slice(0, 6));
+  }
+  return lead.objective != null ? g.P[lead.objective] : null;
+}
+
 export function runAI(g, c) {
   const day = Math.floor(g.hourCount / 24);
+  strategyOf(g, c);
   economy(g, c);
   if ((day + hash(c.tag)) % 7 === 0) diplomacy(g, c);
   if ((day + hash(c.tag)) % 15 === 3) aiDiplomacy(g, c);
@@ -79,7 +115,7 @@ function economy(g, c) {
     if (count("ftr") < ftrWant) wants.unshift(["ftr", 1]);
     if (c.major && count("bmb") < Math.ceil(ftrWant / 2)) wants.splice(1, 0, ["bmb", 1]);
     if (count("ship") < fleets && c.money > 2500 * 1000) wants.push(["ship", 1]);
-    const pick = wants.find(([t]) => g.canTrain(c.tag, t) && c.money - g.unitCost(c.tag, t).money > (c.upkeep || 0) * 25 && (c.income + c.civEff * 1.5 * 2400) - (c.upkeep || 0) > g.unitCost(c.tag, t).upkeep);
+    const pick = wants.find(([t]) => g.freeSpawnCount(c.tag, UNIT[t].domain) > 0 && g.canTrain(c.tag, t) && c.money - g.unitCost(c.tag, t).money > (c.upkeep || 0) * 25 && (c.income + c.civEff * 1.5 * 2400) - (c.upkeep || 0) > g.unitCost(c.tag, t).upkeep);
     if (!pick) break;
     g.train(c.tag, pick[0]); made++;
   }
@@ -193,89 +229,113 @@ function military(g, c, day) {
   const enemies = g.enemiesOf(c.tag);
   const hostile = hostileSet(g, c);
   const idle = d => !d.path.length && d.attacking == null;
+  const reserved = g.reservedFor(c.tag, "land");
+  const taken = new Set(reserved);
+  for (const d of my) taken.add(d.prov);
+  const freeTile = p => !taken.has(p.id) && !g.occupiedBy(p.id, c.tag, "land");
+  const moveTo = (d, p) => { const path = g.computePath(d, p.id); if (!path || !path.length) return false; d.path = path; d.prog = 0; d.attacking = null; taken.add(p.id); return true; };
 
-  if (!hostile.size) {
-    if ((day + hash(c.tag)) % 10 !== 0) return;
-    const home = g.homeComponent(c.tag).filter(p => p.ctrl === c.tag);
-    const border = home.filter(p => p.adj.some(n => g.P[n].owner !== c.tag && !g.friendly(c.tag, g.P[n].owner)));
-    if (!border.length) return;
-    const want = Math.max(1, Math.floor(my.length * 0.85 / border.length));
-    let moves = 0;
-    for (const d of my) {
-      if (!idle(d) || moves > 20) continue;
-      const here = g.P[d.prov];
-      if (border.includes(here) && here.divs.size <= want + 1) continue;
-      const tgt = border.filter(p => p.divs.size < want).sort((a, b) => dist(a, here) - dist(b, here))[0];
-      if (tgt) { g.orderMove([d.id], tgt.id); moves++; }
-    }
-    return;
-  }
-
-  const supplied = c.supplied;
-  const frontier = [];
-  for (const id of supplied) {
-    const p = g.P[id];
-    if (!g.friendly(c.tag, p.ctrl)) continue;
-    const foes = p.adj.filter(n => hostile.has(g.P[n].ctrl));
-    if (foes.length) frontier.push({ p, foes, w: 0 });
-  }
-  if (!frontier.length) {
-    if (enemies.length) seaInvasion(g, c, my, enemies);
-    return;
-  }
-  for (const f of frontier) {
-    f.w = 1.5 + f.foes.reduce((s, n) => s + enemyStrengthAt(g, c.tag, g.P[n], hostile), 0) + (f.p.owner === c.tag ? 0.5 + f.p.vp / 10 : 0);
-  }
-  const totalW = frontier.reduce((s, f) => s + f.w, 0);
-  const reserve = my.length > 12 ? 1 : 0;
-  const avail = my.length - reserve;
-  const mine = new Map(frontier.map(f => [f.p.id, 0]));
-  for (const d of my) {
-    const tgt = d.path.length ? d.path[d.path.length - 1].id : d.prov;
-    if (mine.has(tgt)) mine.set(tgt, mine.get(tgt) + 1);
-  }
-  const need = f => Math.max(1, Math.round(avail * f.w / totalW)) - (mine.get(f.p.id) || 0);
-  let moves = 0;
-  const frontIds = new Set(frontier.map(f => f.p.id));
-  const off = my.filter(d => idle(d) && !frontIds.has(d.prov) && !(d.prov === c.capital && reserve && g.P[c.capital].divs.size <= 1));
-  const maxMoves = 60;
-  for (const d of off) {
-    if (moves > maxMoves) break;
-    const here = g.P[d.prov];
-    const cand = frontier.filter(f => need(f) > 0).sort((a, b) => dist(a.p, here) / (1 + need(a)) - dist(b.p, here) / (1 + need(b)))[0];
-    if (!cand) break;
-    if (g.orderMove([d.id], cand.p.id)) { mine.set(cand.p.id, (mine.get(cand.p.id) || 0) + 1); moves++; }
-  }
-  if (moves < 20) {
-    for (const f of frontier) {
-      const surplus = -need(f);
-      if (surplus <= 1) continue;
-      const here = [...f.p.divs].map(i => g.divs.get(i)).filter(d => d && d.tag === c.tag && idle(d));
-      for (let k = 0; k < Math.min(surplus - 1, here.length - 1) && moves < 30; k++) {
-        const cand = frontier.filter(x => need(x) > 1).sort((a, b) => dist(a.p, f.p) - dist(b.p, f.p))[0];
-        if (!cand) break;
-        if (g.orderMove([here[k].id], cand.p.id)) { mine.set(cand.p.id, (mine.get(cand.p.id) || 0) + 1); mine.set(f.p.id, mine.get(f.p.id) - 1); moves++; }
+  const lineIds0 = new Set();
+  for (const id of c.supplied || []) { const p = g.P[id]; if (p.adj.some(n => hostile.has(g.P[n].ctrl))) lineIds0.add(id); }
+  if (enemies.length) {
+    const cap = g.P[c.capital];
+    if (cap && cap.ctrl === c.tag) {
+      const near = new Set([cap.id]); let ring = [cap.id];
+      for (let r = 0; r < 3; r++) { const nx = []; for (const id of ring) for (const n of g.P[id].adj) if (!near.has(n)) { near.add(n); nx.push(n); } ring = nx; }
+      const danger = [...near].some(id => [...g.P[id].divs].some(i => { const e = g.divs.get(i); return e && g.atWar(c.tag, e.tag); }));
+      {
+        const ring = cap.adj.map(n => g.P[n]).filter(q => q.ctrl === c.tag);
+        const ring2 = danger ? [...new Set(ring.flatMap(q => q.adj))].map(n => g.P[n]).filter(q => q.ctrl === c.tag && q !== cap && !ring.includes(q)) : [];
+        const guard = [cap, ...(danger ? [...ring, ...ring2] : ring.filter(q => q.adj.some(n => g.atWar(c.tag, g.P[n].ctrl))).slice(0, 2))];
+        const gset = new Set(guard.map(q => q.id));
+        const pool = my.filter(d => idle(d) && !gset.has(d.prov) && (danger || !lineIds0.has(d.prov))).sort((a, b) => dist(g.P[a.prov], cap) - dist(g.P[b.prov], cap));
+        for (const q of guard) {
+          if (!freeTile(q) || !pool.length) continue;
+          const d = pool.shift();
+          moveTo(d, q);
+        }
+        if (danger && c.capitalAlarm == null) { c.capitalAlarm = day; g.log(`${c.name} rushes troops to defend ${cap.name}!`, "war", [c.tag]); }
+        if (!danger) c.capitalAlarm = null;
       }
     }
   }
 
+  if (enemies.length && (day + hash(c.tag)) % 3 === 0) {
+    for (const a of coalition(g, c.tag)) {
+      if (a.tag === c.tag) continue;
+      const ac = g.P[a.capital];
+      if (!ac || ac.ctrl !== a.tag) continue;
+      const threat = ac.adj.some(n => [...g.P[n].divs].some(i => { const e = g.divs.get(i); return e && g.atWar(a.tag, e.tag); }));
+      if (!threat) continue;
+      const spots = [ac, ...ac.adj.map(n => g.P[n])].filter(q => g.friendly(c.tag, q.ctrl) && freeTile(q));
+      const helpers = my.filter(d => idle(d) && dist(g.P[d.prov], ac) < 260).sort((x, y) => dist(g.P[x.prov], ac) - dist(g.P[y.prov], ac)).slice(0, Math.min(3, Math.floor(my.length / 4)));
+      let sent = 0;
+      for (const d of helpers) { const q = spots.shift(); if (!q) break; if (moveTo(d, q)) sent++; }
+      if (sent && a.helpLog !== day && c.tag !== g.player) { a.helpLog = day; g.log(`${c.name} sends ${sent} unit${sent > 1 ? "s" : ""} to help defend ${ac.name} for its ally ${a.name}.`, "war", [c.tag, a.tag]); }
+    }
+  }
+
+  let line;
+  if (!hostile.size) {
+    if ((day + hash(c.tag)) % 10 !== 0) return;
+    const home = g.homeComponent(c.tag).filter(p => p.ctrl === c.tag);
+    line = home.filter(p => p.adj.some(n => g.P[n].owner !== c.tag && !g.friendly(c.tag, g.P[n].owner)));
+  } else {
+    line = [];
+    for (const id of c.supplied) {
+      const p = g.P[id];
+      if (!g.friendly(c.tag, p.ctrl)) continue;
+      if (p.adj.some(n => hostile.has(g.P[n].ctrl))) line.push(p);
+    }
+    if (!line.length) { if (enemies.length) seaInvasion(g, c, my, enemies); return; }
+  }
+  const lineIds = new Set(line.map(p => p.id));
+  const weight = p => 1 + p.adj.reduce((s, n) => s + enemyStrengthAt(g, c.tag, g.P[n], hostile), 0) + p.vp / 10;
+  const open = line.filter(freeTile).sort((a, b) => weight(b) - weight(a));
+  const second = [];
+  for (const p of line) for (const n of p.adj) { const q = g.P[n]; if (q.ctrl === c.tag && !lineIds.has(n) && freeTile(q) && !second.includes(q)) second.push(q); }
+  const spare = my.filter(d => idle(d) && !lineIds.has(d.prov) && !(enemies.length && d.prov === c.capital));
+  let moves = 0;
+  for (const target of [...open, ...second]) {
+    if (moves > 60 || !spare.length) break;
+    if (!freeTile(target)) continue;
+    spare.sort((a, b) => dist(g.P[a.prov], target) - dist(g.P[b.prov], target));
+    const d = spare[0];
+    if (moveTo(d, target)) { spare.shift(); moves++; }
+    else spare.push(spare.shift());
+  }
+
   if (!enemies.length) return;
   const allowed = new Map(enemies.map(e => [e, offensiveAllowed(g, c, e)]));
-  for (const f of frontier) {
-    const here = [...f.p.divs].map(i => g.divs.get(i)).filter(d => d && d.tag === c.tag && idle(d) && d.org > 0.6 && d.str > 0.5);
-    if (!here.length) continue;
-    const targets = f.foes.map(n => g.P[n]).filter(q => g.atWar(c.tag, q.ctrl) && allowed.get(q.ctrl)).map(q => ({ q, s: enemyStrengthAt(g, c.tag, q) * (1 + 0.15 * q.fort) * ({ mountain: 1.7, hills: 1.3, forest: 1.25, marsh: 1.4 }[q.terrain] || 1) }));
-    if (!targets.length) continue;
-    targets.sort((a, b) => a.s - b.s + (b.q.vp - a.q.vp) * 0.05);
-    const t = targets[0];
-    const power = here.reduce((s, d) => s + UNIT[d.type].att * (UNIT[d.type].armor ? 1.3 : 1) * d.str * d.org * (1 + g.mod(c.tag, UNIT[d.type].armor ? "armAtt" : "infAtt")), 0);
-    const threatened = f.foes.some(n => enemyStrengthAt(g, c.tag, g.P[n]) > 0);
-    if (t.s === 0) {
-      const send = here.slice(0, threatened && here.length > 1 ? here.length - 1 : here.length).slice(0, 2);
-      if (send.length) g.orderMove(send.map(d => d.id), t.q.id);
-    } else if (power > t.s * 1.35) {
-      const send = threatened && targets.length > 1 && here.length > 2 ? here.slice(0, here.length - 1) : here;
-      g.orderMove(send.map(d => d.id), t.q.id);
+  const usedAtt = new Set();
+  const targets = new Map();
+  for (const f of line) for (const n of f.adj) { const q = g.P[n]; if (g.atWar(c.tag, q.ctrl) && allowed.get(q.ctrl)) targets.set(q.id, q); }
+  const strat = strategyOf(g, c);
+  const obj = objectiveOf(g, c, day);
+  const surround = q => q.adj.filter(n => g.friendly(c.tag, g.P[n].ctrl)).length / Math.max(1, q.adj.length);
+  const score = (q, s) => s - q.vp * 0.05 - (obj ? 1.5 - Math.min(1.5, dist(q, obj) / 300) : 0) - (c.strategy === "encircle" ? surround(q) * 2 : surround(q) * 0.5) - (g.P[g.c(q.ctrl).capital] === q ? 1 : 0);
+  const ranked = [...targets.values()].map(q => ({ q, s: enemyStrengthAt(g, c.tag, q) * (1 + 0.15 * q.fort) * ({ mountain: 1.7, hills: 1.3, forest: 1.25, marsh: 1.4 }[q.terrain] || 1) })).sort((a, b) => score(a.q, a.s) - score(b.q, b.s));
+  for (const { q, s } of ranked) {
+    const atk = [];
+    for (const n of q.adj) {
+      const p = g.P[n];
+      if (!g.friendly(c.tag, p.ctrl)) continue;
+      for (const id of p.divs) { const d = g.divs.get(id); if (d && (d.tag === c.tag || (d.tag !== g.player && g.friendly(c.tag, d.tag) && g.atWar(d.tag, q.ctrl))) && idle(d) && !usedAtt.has(d.id) && !(g.attackLock?.get(d.id) > g.hourCount) && d.org > (c.strategy === "attrition" ? 0.8 : 0.6) && d.str > 0.5) atk.push(d); }
+    }
+    for (let i = atk.length - 1; i >= 0; i--) if (enemies.length && atk[i].prov === g.c(atk[i].tag).capital) atk.splice(i, 1);
+    if (!atk.length) continue;
+    const power = atk.reduce((sum, d) => sum + UNIT[d.type].att * g.tm(d) * (UNIT[d.type].armor ? 1.3 : 1) * d.str * d.org * (1 + g.mod(c.tag, UNIT[d.type].armor ? "armAtt" : "infAtt")), 0);
+    if (s === 0) {
+      const d = atk.sort((a, b) => b.str - a.str)[0];
+      const home = g.P[d.prov];
+      const exposed = home.adj.filter(n => g.atWar(c.tag, g.P[n].ctrl) && enemyStrengthAt(g, c.tag, g.P[n]) > 0).length;
+      if (exposed && atk.length < 2) continue;
+      d.path = [{ id: q.id, sea: false }]; d.prog = 0; usedAtt.add(d.id);
+    } else if (power > s * strat.odds) {
+      if (!g.attackLock) g.attackLock = new Map();
+      for (const d of atk) { d.path = [{ id: q.id, sea: false }]; d.prog = 0; usedAtt.add(d.id); g.attackLock.set(d.id, g.hourCount + 6); }
+      const tags = [...new Set(atk.map(d => d.tag))];
+      if (tags.length > 1 && atk.length >= 3 && g.rng() < 0.25) g.log(`Joint attack: ${tags.map(t => g.c(t).name).join(" and ")} strike ${q.name} together with ${atk.length} units.`, "war", tags);
     }
   }
 }
@@ -293,8 +353,8 @@ function seaInvasion(g, c, my, enemies) {
   coastTargets.sort((a, b) => a.s - b.s);
   const t = coastTargets[0];
   if (t.s > idleDivs.length * 0.6) return;
-  const send = idleDivs.slice(0, Math.min(idleDivs.length - 2, 8));
-  g.orderMove(send.map(d => d.id), t.p.id);
+  const d = idleDivs.sort((a, b) => b.str - a.str)[0];
+  g.orderMove([d.id], t.p.id);
 }
 
 const dist = (a, b) => Math.hypot(a.c[0] - b.c[0], a.c[1] - b.c[1]);
