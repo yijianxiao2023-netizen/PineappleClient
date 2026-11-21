@@ -1,4 +1,5 @@
-import { TECHS, UNIT } from "./data.js?v=1795234395";
+import { TECHS, UNIT, AIR_RANGE } from "./data.js?v=1795235172";
+const BOMB_RANGE = AIR_RANGE * 2;
 
 const TECH_ORDER = ["tools1", "constr1", "housing1", "infwep1", "inf_t2", "arty1", "DOCTRINE", "tank1", "bomber1", "radio", "ftr_t2", "housing2", "suppwep", "at1", "tools2", "constr2", "inf_t3", "tank_t2", "ftr2", "motor", "infwep2", "tank2", "at_t2", "bmb_t2", "housing3", "concind", "logistics", "arm_t2", "inf_t4", "cas", "ftr_t3", "tank_t3", "ship_t2", "arty2", "doc2", "at_t3", "radar", "housing4", "constr3", "arm_t3", "inf_t5", "ftr3", "bmb_t3", "tools3", "tank3", "tank_t4", "ftr_t4", "housing5", "arm_t4", "infwep3", "ship_t3", "naval1", "tank_rel", "bmb2", "naval2", "tank_gun", "escort", "subs", "dive", "blitz", "mech", "naval3", "carrier", "bmb_heavy", "tank_sup", "jet"];
 const DOCTRINE = { GER: "doc_mobile", SOV: "doc_mass", FRA: "doc_plan", ENG: "doc_fire", ITA: "doc_fire" };
@@ -219,11 +220,33 @@ function airAI(g, c, day) {
   const bases = g.P.filter(p => p.ctrl === c.tag && c.supplied.has(p.id) && Math.hypot(p.c[0] - focus.c[0], p.c[1] - focus.c[1]) < 140 && !p.adj.some(n => enemies.has(g.T[n].ctrl)));
   const base = bases.sort((a, b) => Math.hypot(a.c[0] - focus.c[0], a.c[1] - focus.c[1]) - Math.hypot(b.c[0] - focus.c[0], b.c[1] - focus.c[1]))[0] || focus;
   if (!g.friendly(c.tag, base.ctrl)) return;
-  for (const d of air) if (Math.hypot(g.T[d.prov].c[0] - base.c[0], g.T[d.prov].c[1] - base.c[1]) > 120) g.orderMove([d.id], base.id);
+  for (const d of air) if (!d.sortie && Math.hypot(g.T[d.prov].c[0] - base.c[0], g.T[d.prov].c[1] - base.c[1]) > 120) g.orderMove([d.id], base.id);
+}
+
+function bomberAI(g, c) {
+  const bombers = g.divsOf(c.tag, "air").filter(d => d.type === "bmb" && !d.sortie && !d.path.length && d.str > 0.5);
+  if (!bombers.length) return;
+  const enemies = new Set(g.enemiesOf(c.tag));
+  if (!enemies.size) return;
+  for (const d of bombers) {
+    const a = g.T[d.prov];
+    let best = null, bs = 0;
+    for (const p of g.P) {
+      if (!enemies.has(p.ctrl)) continue;
+      const dd = Math.hypot(a.c[0] - p.c[0], a.c[1] - p.c[1]);
+      if (dd > BOMB_RANGE) continue;
+      let sc = 0; for (const id of p.divs) { const e = g.divs.get(id); if (e && g.atWar(c.tag, e.tag)) sc += 1 + (g.battles.has(p.id) ? 1 : 0); }
+      if (!sc) sc = (p.mil + p.civ * 0.5) * 0.4;
+      sc -= dd / BOMB_RANGE * 0.3;
+      if (sc > bs) { bs = sc; best = p; }
+    }
+    if (best) g.orderBomb([d.id], best.id);
+  }
 }
 
 function military(g, c, day) {
   airAI(g, c, day);
+  bomberAI(g, c);
   const my = g.divsOf(c.tag);
   if (!my.length) return;
   const enemies = g.enemiesOf(c.tag);
