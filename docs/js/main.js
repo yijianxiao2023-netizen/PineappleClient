@@ -1,7 +1,7 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795219986";
-import { Game, dateStr } from "./sim.js?v=1795219986";
-import { runAI, aiAcceptsFaction } from "./ai.js?v=1795219986";
-import { MapView, drawUnitIcon } from "./render.js?v=1795219986";
+import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795220562";
+import { Game, dateStr } from "./sim.js?v=1795220562";
+import { runAI, aiAcceptsFaction } from "./ai.js?v=1795220562";
+import { MapView, drawUnitIcon } from "./render.js?v=1795220562";
 
 const $ = id => document.getElementById(id);
 const SPEEDS = [0, 2, 4, 8, 20, 60];
@@ -32,7 +32,7 @@ let battleLog = [], unread = 0, logFilter = "all", endShown = false, acc = 0, la
 const canvas = $("map");
 
 async function boot() {
-  const res = await fetch("data/map.json?v=1795219986");
+  const res = await fetch("data/map.json?v=1795220562");
   MAP = await res.json();
   const preview = new Game(MAP, { seed: 1 });
   view = new MapView(canvas, preview);
@@ -336,7 +336,8 @@ function countryRow(t, myF) {
     if (myF && myF.leader === player && !f && rel === "neutral") acts += `<button class="btn sm" data-act="invite" data-t="${t}">Invite</button>`;
   }
   const divs = game.divsOf(t).length;
-  return `<div class="row">${flag(t)}<div class="grow"><div class="t">${o.name} ${c.guarantees.has(t) ? '<span class="chip ally">guaranteed</span>' : ""}</div><div class="s">${IDEOLOGY[o.ideology].name} · ${divs} divisions · ${o.civEff.toFixed(0)}/${o.milEff.toFixed(0)} factories</div></div><span class="chip ${rel}">${relName}</span>${acts}</div>`;
+  if (t !== player) acts += `<button class="btn sm gold" data-act="dip" data-t="${t}">Diplomacy…</button>`;
+  return `<div class="row crow">${flag(t)}<div class="grow"><div class="t">${o.name} ${c.guarantees.has(t) ? '<span class="chip ally">guaranteed</span>' : ""}${o.overlord ? ` <span class="chip neutral">puppet of ${COUNTRIES[o.overlord].name}</span>` : ""}${game.truce(player, t) ? ' <span class="chip neutral">truce</span>' : ""}</div><div class="s">${IDEOLOGY[o.ideology].name} · ${divs} divisions · ${o.civEff.toFixed(0)}/${o.milEff.toFixed(0)} factories</div></div><span class="chip ${rel}">${relName}</span><div class="racts">${acts}</div></div>`;
 }
 
 function renderHelp() {
@@ -363,6 +364,7 @@ function renderHelp() {
     <li>Send your units onto <b>any</b> other country's land or units to attack them. If you aren't already at war, you'll be asked to confirm, and then war is declared on them and their whole faction.</li>
     <li>Every province you take <b>becomes yours</b> and turns your color. It gives you its factories, income and industry.</li>
     <li>Hover over any counter to see each unit's health bar (soldiers left). Click a battle's province to see both sides.</li>
+    <li><b>Diplomacy…</b> (Diplomacy panel, or click a foreign province): propose alliances, demand gold, territory or puppets, and send peace treaties that demand gold or land. The AI does the same to each other and to you, and a popup lets you accept or refuse.</li>
     <li>You can <b>betray your allies</b> by attacking one of their units. You leave your faction and join the other side for the rest of the match. Your allies will never betray you first, but anyone else can attack you.</li></ul>
   <h4>Warfare</h4><ul>
     <li>Moving into a province with enemy divisions starts a battle. The bar under the swords shows which side is winning.</li>
@@ -422,6 +424,7 @@ function onPanelClick(e) {
   }
   else if (a === "found") game.createFaction(player, `${c.adj} Pact`);
   else if (a === "logf") logFilter = el.dataset.f;
+  else if (a === "dip") { dipModal(el.dataset.t); return; }
   else if (a === "upgrade") { const n = game.upgradeUnits(player, el.dataset.type); if (!n) toast("Can't afford the upgrade right now."); }
   else if (a === "stop") { for (const id of view.selected) { const d = game.divs.get(id); if (d) { d.path = []; d.attacking = null; } } }
   else if (a === "desel") { view.selected.clear(); $("info").classList.add("hidden"); }
@@ -460,11 +463,100 @@ function showProvInfo(p) {
   <span class="k">Units</span><span>${byType.join("") || "None"}</span></div>
   ${battleHtml(p)}
   <div class="acts">
+    ${p.owner !== player ? `<button class="btn sm gold" data-act="dip" data-t="${p.owner}">Diplomacy with ${COUNTRIES[p.owner].name}…</button>` : ""}
     ${here.get(player) ? `<button class="btn sm" data-act="selprov" data-p="${p.id}">Select my units</button>` : ""}
     ${view.selected.size ? `<button class="btn sm gold" data-act="movehere" data-p="${p.id}">Move selected here</button>` : ""}
     ${own ? ["civ", "mil", "fort"].map(t => `<button class="btn sm" data-act="pbuild" data-type="${t}" data-p="${p.id}" ${game.canBuild(player, t, p.id) ? "" : "disabled"}>+ ${t === "civ" ? "Civilian" : t === "mil" ? "Military" : "Fort"}</button>`).join("") : ""}
   </div>`;
   infoDay = Math.floor(game.hourCount / 24);
+}
+
+let dipState = null;
+function dipModal(t) {
+  const T = game.c(t), me = game.c(player);
+  if (!dipState || dipState.t !== t) dipState = { t, gold: Math.round(Math.min(T.money * 0.5, (T.income || 0) * 10) / 1000) * 1000, tiles: new Set(game.borderTiles(player, t, 6).slice(0, 2).map(p => p.id)), mode: "demand", keep: true, pgold: 0, puppet: false };
+  const st = dipState;
+  const was = speed; if (speed) { st.resume = was; setSpeed(0); }
+  const ratio = game.power(player) / game.power(t);
+  const rel = game.relation(player, t);
+  const pred = (type, terms) => { const r = game.aiAccept(type, player, t, terms); return `<span class="pred ${r.ok ? "yes" : "no"}">${r.ok ? "✓ Likely to accept" : "✗ Will refuse"}</span> <span class="muted">${esc(r.why)}</span>`; };
+  const k = game.allianceKind(player, t);
+  const border = game.borderTiles(player, t, 6);
+  const atWar = game.atWar(player, t);
+  const conquered = game.conqueredFrom(player, t).length, lost = game.conqueredFrom(t, player).length;
+  const ws = atWar ? game.warScore(player, t) : 0;
+  const peaceTerms = st.mode === "white" ? { demander: null } : st.mode === "concede" ? { demander: t, keep: true, keepCount: lost, gold: st.pgold } : { demander: player, keep: st.keep, keepCount: conquered, gold: st.pgold, puppet: st.puppet };
+  const sec = (title, body) => `<div class="dsec"><h4>${title}</h4>${body}</div>`;
+  let html = `<div class="dhead">${flag(t)} <b>${T.name}</b> <span class="chip ${rel}">${{ ally: "Ally", enemy: "At war", neutral: "Neutral" }[rel] || ""}</span></div>
+    <div class="kv" style="text-align:left;margin:8px 0 4px"><span class="k">Ideology</span><span>${IDEOLOGY[T.ideology].name}${game.factionOf(t) ? " · " + esc(game.factionOf(t).name) : ""}${T.overlord ? " · puppet of " + COUNTRIES[T.overlord].name : ""}</span>
+    <span class="k">Balance of power</span><span>Your side is <b>${ratio.toFixed(1)}×</b> ${ratio >= 1 ? "stronger" : "as strong"}</span>
+    <span class="k">Their treasury</span><span>${money(T.money)} (${money(T.income || 0)}/day from land)</span>
+    ${game.truce(player, t) ? `<span class="k">Truce</span><span>Until ${dateStr(me.truces[t])}. Breaking it costs an extra war tax.</span>` : ""}</div>`;
+  if (atWar) {
+    html += sec(`Peace treaty <small>War score ${Math.round(ws * 100)} (positive = you are winning)</small>`, `
+      <div class="seg"><button class="btn sm ${st.mode === "demand" ? "gold" : ""}" data-d="mode" data-v="demand">I demand</button><button class="btn sm ${st.mode === "white" ? "gold" : ""}" data-d="mode" data-v="white">White peace</button><button class="btn sm ${st.mode === "concede" ? "gold" : ""}" data-d="mode" data-v="concede">I concede</button></div>
+      ${st.mode === "demand" ? `<label class="ck"><input type="checkbox" data-d="keep" ${st.keep ? "checked" : ""}> Keep the ${conquered} province${conquered === 1 ? "" : "s"} you took from them</label>
+      <label class="ck">Demand gold: <input type="number" step="10000" min="0" value="${st.pgold}" data-d="pgold"> <span class="muted">(they have ${money(T.money)})</span></label>
+      <label class="ck"><input type="checkbox" data-d="puppet" ${st.puppet ? "checked" : ""}> Make them your puppet</label>` : st.mode === "concede" ? `<div class="muted">They keep the ${lost} province${lost === 1 ? "" : "s"} they took from you.</div><label class="ck">Pay them gold: <input type="number" step="10000" min="0" value="${st.pgold}" data-d="pgold"> <span class="muted">(you have ${money(me.money)})</span></label>` : `<div class="muted">Everyone returns the land they took. War ends with a one-year truce.</div>`}
+      <div class="dact"><button class="btn gold" data-d="send" data-type="peace">Send peace offer</button> ${pred("peace", peaceTerms)}</div>`);
+  } else {
+    html += sec("Alliance", k.kind === "none" ? `<div class="muted">${esc(k.text)}</div>` : `<div class="dact"><button class="btn" data-d="send" data-type="alliance">${esc(k.text)}</button> ${pred("alliance", {})}</div>`);
+    if (rel !== "ally") {
+      html += sec("Demand gold", `<label class="ck">Amount: <input type="number" step="10000" min="0" value="${st.gold}" data-d="gold"> <span class="muted">(they have ${money(T.money)})</span></label><div class="dact"><button class="btn" data-d="send" data-type="gold">Demand ${money(st.gold)}</button> ${pred("gold", { gold: st.gold })}</div>`);
+      html += sec("Demand territory", border.length ? `<div class="tiles">${border.map(p => `<label class="ck"><input type="checkbox" data-d="tile" data-v="${p.id}" ${st.tiles.has(p.id) ? "checked" : ""}> ${esc(p.name)}${p.vp ? ` <span class="muted">VP ${p.vp}</span>` : ""}</label>`).join("")}</div><div class="dact"><button class="btn" data-d="send" data-type="tiles" ${st.tiles.size ? "" : "disabled"}>Demand ${st.tiles.size} province${st.tiles.size === 1 ? "" : "s"}</button> ${pred("tiles", { tiles: [...st.tiles] })}</div>` : `<div class="muted">You don't share a land border with them.</div>`);
+      html += sec("Demand they become your puppet", `<div class="muted">Puppets fight on your side and pay you 25% of their income. After 180 days you can annex them.</div><div class="dact"><button class="btn" data-d="send" data-type="puppet">Demand puppet</button> ${pred("puppet", {})}</div>`);
+      html += `<p class="muted" style="font-size:12px">If they refuse a demand, you get a free war goal against them (no war tax).</p>`;
+    }
+    if (T.overlord === player) html += sec("Your puppet", `<div class="dact"><button class="btn" data-d="annex" ${game.canAnnexPuppet(player, t) ? "" : "disabled"}>Annex</button><button class="btn" data-d="release">Release</button> <span class="muted">${game.canAnnexPuppet(player, t) ? "Ready to annex." : "Can annex 180 days after becoming a puppet."}</span></div>`);
+  }
+  $("modalCard").innerHTML = `<div class="dipmodal">${html}<div class="acts"><button class="btn" data-d="close">Close</button></div></div>`;
+  $("modal").classList.remove("hidden");
+  $("modalCard").onclick = e => {
+    const b = e.target.closest("[data-d]"); if (!b || b.disabled) return;
+    const d = b.dataset.d;
+    if (d === "close") { closeDip(); return; }
+    if (d === "mode") { st.mode = b.dataset.v; st.pgold = 0; dipModal(t); return; }
+    if (d === "annex") { game.annexPuppet(player, t); closeDip(); return; }
+    if (d === "release") { game.releasePuppet(player, t); closeDip(); return; }
+    if (d === "send") {
+      const type = b.dataset.type;
+      const terms = type === "gold" ? { gold: st.gold } : type === "tiles" ? { tiles: [...st.tiles] } : type === "peace" ? peaceTerms : {};
+      const r = game.propose(type, player, t, terms);
+      toast(r.ok ? `${T.name} accepted!` : `${T.name} refused: ${r.msg || ""}${["gold", "tiles", "puppet"].includes(type) && !r.ok ? " You gained a war goal against them." : ""}`, r.ok ? "" : "war");
+      updateHud(); panelDay = -1; view.dirty = true;
+      if (r.ok) { closeDip(); return; }
+      dipModal(t); return;
+    }
+  };
+  $("modalCard").onchange = e => {
+    const b = e.target.closest("[data-d]"); if (!b) return;
+    const d = b.dataset.d;
+    if (d === "keep") st.keep = b.checked;
+    if (d === "puppet") st.puppet = b.checked;
+    if (d === "gold") st.gold = Math.max(0, +b.value || 0);
+    if (d === "pgold") st.pgold = Math.max(0, +b.value || 0);
+    if (d === "tile") { const id = +b.dataset.v; b.checked ? st.tiles.add(id) : st.tiles.delete(id); }
+    dipModal(t);
+  };
+}
+function closeDip() {
+  $("modal").classList.add("hidden");
+  $("modalCard").onclick = null; $("modalCard").onchange = null;
+  if (dipState?.resume) setSpeed(dipState.resume);
+  dipState = null; panelDay = -1; renderPanel();
+}
+
+function showPending(p) {
+  const was = speed; setSpeed(0);
+  const F = game.c(p.from);
+  const kind = { alliance: "Alliance proposal", gold: "Demand for gold", tiles: "Demand for territory", puppet: "Demand to become a puppet", peace: "Peace offer" }[p.type];
+  const warn = ["gold", "tiles", "puppet"].includes(p.type) ? `<p class="muted">If you refuse, ${F.name} gets a war goal against you.</p>` : p.type === "peace" && p.terms.demander === p.from ? `<p class="muted">Refusing means the war goes on.</p>` : "";
+  $("modalCard").innerHTML = `<div class="dipmodal"><div class="dhead">${flag(p.from)} <b>${kind}</b> <span class="muted">from ${F.name}</span></div><p style="text-align:left">${esc(p.text)}</p>${warn}
+    <div class="acts"><button class="btn gold" id="pAcc">Accept</button><button class="btn red" id="pRef">Refuse</button></div></div>`;
+  $("modal").classList.remove("hidden");
+  const done = acc => { game.resolvePending(p.id, acc); $("modal").classList.add("hidden"); setSpeed(was); updateHud(); panelDay = -1; view.dirty = true; };
+  $("pAcc").onclick = () => done(true);
+  $("pRef").onclick = () => done(false);
 }
 
 function battleHtml(p) {
@@ -700,6 +792,11 @@ function bindTips(root) {
 }
 
 function loop(now) {
+  try { loopInner(now); } catch (err) { console.error(err); if (view) view.dirty = true; }
+  requestAnimationFrame(loop);
+}
+
+function loopInner(now) {
   const dt = Math.min(0.1, (now - lastFrame) / 1000);
   lastFrame = now;
   if (view && panKeys.size) {
@@ -728,8 +825,8 @@ function loop(now) {
   if (game && now - lastPanel > 400 && Math.floor(game.hourCount / 24) !== infoDay && !$("info").classList.contains("hidden") && !$("info").matches(":hover")) {
     if (view.selected.size) showDivInfo(); else if (view.selProv) showProvInfo(view.selProv);
   }
+  if (game && game.pending.length && $("modal").classList.contains("hidden")) showPending(game.pending[0]);
   if (view && view.dirty) view.draw();
-  requestAnimationFrame(loop);
 }
 
 function showGameOver() {

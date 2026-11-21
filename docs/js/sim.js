@@ -1,5 +1,6 @@
-import { START_DATE, COUNTRIES, FACTIONS, TERRAIN, UNIT, BUILD, TECHS, GENERIC_FOCUS, NATIONAL_FOCUS, AIR_RANGE, TIER_MULT, TIER_COST, ROMAN, INCOME_SCALE, COST_SCALE, WAR_TAX } from "./data.js?v=1795219986";
+import { START_DATE, COUNTRIES, FACTIONS, TERRAIN, UNIT, BUILD, TECHS, GENERIC_FOCUS, NATIONAL_FOCUS, AIR_RANGE, TIER_MULT, TIER_COST, ROMAN, INCOME_SCALE, COST_SCALE, WAR_TAX } from "./data.js?v=1795220562";
 
+import { installDiplomacy } from "./diplo.js?v=1795220562";
 const DAY = 86400000;
 const HOUR = 3600000;
 const TECH = Object.fromEntries(TECHS.map(t => [t.id, t]));
@@ -36,6 +37,8 @@ export class Game {
     this.mapVersion = 0;
     this.ai = null;
     this.gameOver = null;
+    this.pending = [];
+    this.nextPendingId = 1;
     this.factions = FACTIONS.map(f => ({ ...f, members: new Set(f.members) }));
     this.countries = {};
     for (const [tag, d] of Object.entries(COUNTRIES)) {
@@ -43,7 +46,7 @@ export class Game {
         tag, ...d, alive: true, pp: 50, manpower: d.pop * 8, eqInf: d.mil * 600 + d.divs * 200, tanks: 0, planes: d.mil * 20, money: (400 + d.civ * 25) * COST_SCALE, income: 0, share: { tank: 0, air: 0.1 },
         techs: new Set(), research: Array.from({ length: d.slots }, () => null), focus: null, focusDone: new Set(),
         focusBonus: { ...(d.spirit || {}) }, mods: {}, construction: [], training: [], wargoals: {}, justifying: null, guarantees: new Set(),
-        capital: -1, civEff: 0, milEff: 0, supplied: new Set(), kills: 0, losses: 0, flags: {},
+        overlord: null, puppetSince: 0, truces: {}, lastProp: 0, capital: -1, civEff: 0, milEff: 0, supplied: new Set(), kills: 0, losses: 0, flags: {},
       };
     }
     for (const p of this.P) {
@@ -186,6 +189,10 @@ export class Game {
           for (const b of w.sides[1 - s]) this.rel[a][b] = "enemy";
         }
       }
+    }
+    for (const c of Object.values(this.countries)) {
+      if (!c.alive || !c.overlord || !this.countries[c.overlord]?.alive) continue;
+      if (this.rel[c.tag][c.overlord] !== "enemy") { this.rel[c.tag][c.overlord] = "ally"; this.rel[c.overlord][c.tag] = "ally"; }
     }
     this.relVersion++;
   }
@@ -572,6 +579,7 @@ export class Game {
     c.upkeep = upkeep;
     c.money += c.income + c.civEff * 1.5 * INCOME_SCALE - upkeep;
     c.netIncome = c.income + c.civEff * 1.5 * INCOME_SCALE - upkeep;
+    if (c.overlord && this.countries[c.overlord]?.alive) { const trib = Math.max(0, c.income * 0.25); c.money -= trib; this.countries[c.overlord].money += trib; c.tribute = trib; }
     c.broke = c.money < 0;
     if (c.broke) { c.money = 0; for (const d of this.divs.values()) if (d.tag === c.tag && d.domain === "land") d.org = Math.max(0, d.org - 0.04); }
     c.pp = Math.min(2000, c.pp + 2 + (c.mods.ppGain || 0));
@@ -751,6 +759,9 @@ export class Game {
   }
 
   killCountry(t) {
+    for (const c of Object.values(this.countries)) if (c.overlord === t.tag) c.overlord = null;
+    t.overlord = null;
+    this.pending = this.pending.filter(p => p.from !== t.tag && p.to !== t.tag);
     t.alive = false; t.focus = null; t.research = t.research.map(() => null); t.construction = []; t.training = []; t.justifying = null;
     for (const f of this.factions) {
       if (f.members.delete(t.tag) && f.leader === t.tag) f.leader = [...f.members][0] || null;
@@ -824,6 +835,7 @@ export class Game {
   forceWar(tag, target) {
     if (this.atWar(tag, target) || this.friendly(tag, target) || !this.countries[target].alive) return false;
     const c = this.countries[tag];
+    if (this.truce(tag, target)) { c.money -= WAR_TAX; delete c.truces[target]; delete this.countries[target].truces[tag]; this.log(`${c.name} broke its truce with ${this.countries[target].name} (extra $${WAR_TAX.toLocaleString()} penalty).`, "justify", [tag, target]); }
     if (!c.wargoals[target]) { c.money -= WAR_TAX; this.log(`${c.name} attacked ${this.countries[target].name} without a war goal and paid a $${WAR_TAX.toLocaleString()} war tax.`, "justify", [tag, target]); }
     this.countries[tag].wargoals[target] = this.time + DAY;
     return this.declareWar(tag, target);
@@ -903,11 +915,13 @@ export class Game {
   }
   canDeclare(tag, target) {
     const c = this.countries[tag], t = this.countries[target];
-    return c.alive && t.alive && !!c.wargoals[target] && !this.atWar(tag, target) && !this.friendly(tag, target);
+    return c.alive && t.alive && !!c.wargoals[target] && !this.atWar(tag, target) && !this.friendly(tag, target) && !this.truce(tag, target);
   }
   declareWar(tag, target) {
     if (!this.canDeclare(tag, target)) return false;
-    const att = new Set([tag]), def = new Set([target]);
+    const att = new Set([tag, ...this.puppetsOf(tag)]), def = new Set([target, ...this.puppetsOf(target)]);
+    const ov = this.countries[target].overlord;
+    if (ov && this.countries[ov].alive && ov !== tag) { def.add(ov); for (const x of this.puppetsOf(ov)) def.add(x); }
     const fa = this.factionOf(tag), fd = this.factionOf(target);
     if (fd) for (const m of fd.members) def.add(m);
     if (!this.atWarAny(target)) for (const c of this.alive()) if (c.guarantees.has(target)) def.add(c.tag);
@@ -915,8 +929,10 @@ export class Game {
     for (const m of [...def]) if (att.has(m)) def.delete(m);
     if (!def.has(target)) return false;
     for (const m of [...def]) { const f = this.factionOf(m); if (f) for (const x of f.members) if (!att.has(x)) def.add(x); }
+    for (const m of [...att]) for (const x of this.puppetsOf(m)) if (!def.has(x)) att.add(x);
+    for (const m of [...def]) for (const x of this.puppetsOf(m)) if (!att.has(x)) def.add(x);
     const name = `${this.countries[tag].adj}–${this.countries[target].adj} War`;
-    this.wars.push({ id: this.nextWarId++, name, sides: [att, def], start: this.time });
+    this.wars.push({ id: this.nextWarId++, name, sides: [att, def], start: this.time, main: [tag, target] });
     delete this.countries[tag].wargoals[target];
     this.rebuildRelations();
     this.log(`${this.countries[tag].name} declared war on ${this.countries[target].name}!` + (def.size > 1 ? ` (${[...def].filter(x => x !== target).map(x => this.countries[x].name).join(", ")} join the defense)` : ""), "war", [tag, target]);
@@ -990,8 +1006,13 @@ export class Game {
   }
 
   strength(tag) {
-    let s = 0;
-    for (const d of this.divs.values()) if (d.tag === tag && d.domain === "land") s += ({ arm: 2.2, tank: 1.6 }[d.type] || 1) * d.str * this.tm(d);
-    return s;
+    const day = Math.floor(this.hourCount / 24);
+    if (this._strDay !== day) {
+      this._strDay = day; this._str = {};
+      for (const d of this.divs.values()) if (d.domain === "land") this._str[d.tag] = (this._str[d.tag] || 0) + ({ arm: 2.2, tank: 1.6 }[d.type] || 1) * d.str * this.tm(d);
+    }
+    return this._str[tag] || 0;
   }
 }
+
+installDiplomacy(Game);

@@ -24,7 +24,8 @@ A grand strategy game of Europe on the eve of the Second World War, in the spiri
 - **Upkeep:** every unit costs money every day, and higher tiers cost more. If you go broke, your army loses organization.
 - **Manpower** grows every second. Research **Housing I to V** (+25% each) and conquer land to grow it faster.
 - **Battle Log** (`B`): a separate channel listing everything every country does, including research, war-goal justifications, declarations of war, capitulations and alliances.
-- **Diplomacy:** factions, war goals, declarations of war, guarantees, and joining, founding or inviting countries to factions. Countries capitulate when they lose their core territory.
+- **Diplomacy:** factions, war goals, declarations of war and guarantees. Open **Diplomacy…** on any country to propose alliances, **demand gold**, **demand territory**, **demand they become your puppet**, or send **peace treaties** that demand gold, land or a puppet (or offer white peace or concessions). Puppets fight for you and pay 25% of their income, and you can annex them after 180 days. Peace brings a one-year truce. AIs ally with each other, make demands and peace offers to each other, and send them to you as popups you can accept or refuse. Refusing a demand gives the demander a free war goal.
+- Countries capitulate when they lose their core territory.
 - The game ends in 1950.
 
 ## Controls
