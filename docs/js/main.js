@@ -1,7 +1,7 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795221551";
-import { Game, dateStr } from "./sim.js?v=1795221551";
-import { runAI, aiAcceptsFaction } from "./ai.js?v=1795221551";
-import { MapView, drawUnitIcon } from "./render.js?v=1795221551";
+import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795221651";
+import { Game, dateStr } from "./sim.js?v=1795221651";
+import { runAI, aiAcceptsFaction } from "./ai.js?v=1795221651";
+import { MapView, drawUnitIcon } from "./render.js?v=1795221651";
 
 const $ = id => document.getElementById(id);
 const SPEEDS = [0, 2, 4, 8, 20, 60];
@@ -32,7 +32,7 @@ let battleLog = [], unread = 0, logFilter = "all", endShown = false, acc = 0, la
 const canvas = $("map");
 
 async function boot() {
-  const res = await fetch("data/map.json?v=1795221551");
+  const res = await fetch("data/map.json?v=1795221651");
   MAP = await res.json();
   const preview = new Game(MAP, { seed: 1 });
   view = new MapView(canvas, preview);
@@ -79,7 +79,7 @@ function startGame(tag) {
   game.on(onEvent);
   setSpeed(0);
   const f = game.factionOf(tag);
-  toast(`You lead ${game.c(tag).name}${f ? ", a member of the " + f.name : ""}. Press Space to start time.`);
+  toast(`You lead ${game.c(tag).name}${f ? ", a member of the " + f.name : ""}. Press Space to speed up time (it cycles 1 → 5 → pause).`);
   openTab("focus");
 }
 
@@ -137,7 +137,7 @@ function toast(text, cls = "") {
 }
 
 function setupHud() {
-  $("speeds").innerHTML = `<button class="pause" data-s="0" title="Pause (Space)">❚❚</button>` + [1, 2, 3, 4, 5].map(s => `<button data-s="${s}" title="Speed ${s}">${s}</button>`).join("");
+  $("speeds").innerHTML = `<button class="pause" data-s="0" title="Pause">❚❚</button>` + [1, 2, 3, 4, 5].map(s => `<button data-s="${s}" title="Speed ${s}">${s}</button>`).join("");
   $("speeds").onclick = e => { const b = e.target.closest("button"); if (b) setSpeed(+b.dataset.s); };
   document.querySelectorAll("#sidebar [data-tab]").forEach(b => b.onclick = () => openTab(tab === b.dataset.tab ? null : b.dataset.tab));
   $("modeBtn").onclick = toggleMode;
@@ -344,7 +344,7 @@ function renderHelp() {
   return `<div class="help">
   <p><b>Goal:</b> Lead your nation from 1936 to 1950. Build industry, research technology, raise armies and win your wars. The starting alliances follow history, but every war is decided fresh each game.</p>
   <h4>Controls</h4><ul>
-    <li><kbd>Space</kbd> pause or unpause, <kbd>1</kbd>–<kbd>5</kbd> game speed.</li>
+    <li><kbd>Space</kbd> steps the speed up: paused → 1 → 2 → 3 → 4 → 5 → paused again. <kbd>1</kbd>–<kbd>5</kbd> jump straight to a speed.</li>
     <li>Drag to pan, scroll to zoom. The arrow keys also pan.</li>
     <li><b>Click your unit</b> (or anywhere in a province where you have units) to select it. Hover over where you want to go, then <b>left-click</b> to send it there. Right-click cancels. <kbd>Shift</kbd>-click adds more units, <kbd>Shift</kbd>-drag box-selects, and clicking the sea deselects.</li>
     <li>You never have to click each province. Select a unit, <b>hover</b> over any destination to preview the fastest route (dashed arrows), then <b>left-click once</b> and it walks the whole way. Nothing moves until you click.</li>
@@ -776,7 +776,7 @@ function handleClick(x, y, shift, ptype) {
 addEventListener("keydown", e => {
   if (!game || e.target.tagName === "INPUT") return;
   const k = e.key.toLowerCase();
-  if (k === " ") { e.preventDefault(); setSpeed(speed ? 0 : lastSpeed); }
+  if (k === " ") { e.preventDefault(); setSpeed(speed >= 5 ? 0 : speed + 1); toast(speed ? `Speed ${speed}` : "Paused"); }
   else if ("12345".includes(k) && k.length === 1) setSpeed(+k);
   else if (k === "f") openTab(tab === "focus" ? null : "focus");
   else if (k === "r") openTab(tab === "research" ? null : "research");
