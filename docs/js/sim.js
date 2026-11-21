@@ -1,6 +1,6 @@
-import { START_DATE, COUNTRIES, FACTIONS, TERRAIN, UNIT, BUILD, TECHS, GENERIC_FOCUS, NATIONAL_FOCUS, AIR_RANGE, TIER_MULT, TIER_COST, ROMAN, INCOME_SCALE, COST_SCALE, WAR_TAX } from "./data.js?v=1795224029";
+import { START_DATE, COUNTRIES, FACTIONS, TERRAIN, UNIT, BUILD, TECHS, GENERIC_FOCUS, NATIONAL_FOCUS, AIR_RANGE, TIER_MULT, TIER_COST, ROMAN, INCOME_SCALE, COST_SCALE, WAR_TAX } from "./data.js?v=1795224314";
 
-import { installDiplomacy } from "./diplo.js?v=1795224029";
+import { installDiplomacy } from "./diplo.js?v=1795224314";
 const MOVE_DIV = 40;
 const MAX_RESEARCH_DAYS = 42;
 const DAY = 86400000;
@@ -474,6 +474,7 @@ export class Game {
     const capOf = Object.values(this.countries).find(c => c.alive && c.capital === p.id && c.tag === p.core && c.tag !== newCtrl && this.atWar(c.tag, newCtrl));
     p.ctrl = newCtrl; p.owner = newCtrl;
     if (capOf) { this.mapVersion++; this.capitalFall(capOf, newCtrl); return; }
+    if (newCtrl === this.player) this.checkConquest();
     if (newCtrl === this.player || prev === this.player) this.log(newCtrl === this.player ? `You took ${p.name} from ${this.countries[prev]?.name || prev}.` : `${this.countries[newCtrl].name} took ${p.name} from you!`, newCtrl === this.player ? "army" : "war", [newCtrl, prev]);
     this.mapVersion++;
     for (const id of [...p.divs]) { const d = this.divs.get(id); if (d && this.atWar(d.tag, tag)) this.retreatOrDestroy(d, tag); }
@@ -991,9 +992,14 @@ export class Game {
     if (this.player && this.countries[this.player].alive) {
       const pf = this.factionOf(this.player);
       if (!this.enemiesOf(this.player).length && this.alive().every(x => x.tag === this.player || this.friendly(this.player, x.tag) || !x.major)) {
-        this.gameOver = { win: true, text: `${this.countries[this.player].name}${pf ? " and the " + pf.name : ""} dominate Europe!` };
+        if (!this.dominated) { this.dominated = true; this.log(`${this.countries[this.player].name}${pf ? " and the " + pf.name : ""} dominate Europe! To win, control the entire map.`, "major", [this.player]); }
       }
     }
+  }
+
+  checkConquest() {
+    if (!this.player || this.gameOver || !this.countries[this.player].alive) return;
+    if (this.P.every(p => p.owner === this.player)) this.gameOver = { win: true, conquest: true, text: `${this.countries[this.player].name} controls the entire map!` };
   }
 
   capitalFall(c, conqueror) {
@@ -1013,6 +1019,7 @@ export class Game {
     for (const d of [...this.divs.values()]) { const q = this.P[d.prov]; if (!this.friendly(d.tag, q.ctrl) && d.domain === "land" && d.tag !== conqueror && !this.atWar(d.tag, q.ctrl)) { const cap = this.P[this.countries[d.tag].capital]; if (cap && cap.ctrl === d.tag) this.moveDivTo(d, cap.id); } }
     this.updateEconomyCache(); this.computeSupply();
     if (this.player && conqueror === this.player) this.log(`You now own all of ${c.name}'s land, factories and income.`, "army", [conqueror]);
+    this.checkConquest();
   }
 
   forceWar(tag, target) {
