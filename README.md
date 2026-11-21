@@ -34,7 +34,7 @@ A grand strategy game of Europe on the eve of the Second World War, in the spiri
 |---|---|
 | Space | Cycle speed: paused → 1 → 2 → 3 → 4 → 5 → paused |
 | 1–5 | Jump to a speed |
-| Drag / scroll | Pan and zoom (arrow keys also pan) |
+| Right-drag / scroll | Move around the map and zoom (arrow keys also pan; right-click without dragging cancels) |
 | Click a counter, then click a province | Move or attack (right-click also works) |
 | Shift/Ctrl/⌘-click, Shift-drag | Add to selection / box-select |
 | G | Select all your land units |

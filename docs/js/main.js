@@ -1,7 +1,7 @@
-import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795223937";
-import { Game, dateStr } from "./sim.js?v=1795223937";
-import { runAI, aiAcceptsFaction } from "./ai.js?v=1795223937";
-import { MapView, drawUnitIcon } from "./render.js?v=1795223937";
+import { COUNTRIES, UNIT, UNIT_ORDER, BUILD, TECHS, IDEOLOGY, TERRAIN, FACTIONS, ROMAN, TIER_MULT } from "./data.js?v=1795224029";
+import { Game, dateStr } from "./sim.js?v=1795224029";
+import { runAI, aiAcceptsFaction } from "./ai.js?v=1795224029";
+import { MapView, drawUnitIcon } from "./render.js?v=1795224029";
 
 const $ = id => document.getElementById(id);
 const SPEEDS = [0, 0.04, 0.08, 0.16, 0.4, 0.8];
@@ -32,7 +32,7 @@ let battleLog = [], unread = 0, logFilter = "all", endShown = false, acc = 0, la
 const canvas = $("map");
 
 async function boot() {
-  const res = await fetch("data/map.json?v=1795223937");
+  const res = await fetch("data/map.json?v=1795224029");
   MAP = await res.json();
   const preview = new Game(MAP, { seed: 1 });
   view = new MapView(canvas, preview);
@@ -363,7 +363,7 @@ function renderHelp() {
   <p><b>Goal:</b> Lead your nation from 1936 to 1950. Build industry, research technology, raise armies and win your wars. The starting alliances follow history, but every war is decided fresh each game.</p>
   <h4>Controls</h4><ul>
     <li><kbd>Space</kbd> steps the speed up: paused → 1 → 2 → 3 → 4 → 5 → paused again. <kbd>1</kbd>–<kbd>5</kbd> jump straight to a speed.</li>
-    <li>Drag to pan, scroll to zoom. The arrow keys also pan.</li>
+    <li><b>Right-click and drag</b> to move around the map (look at a different part of it). Scroll to zoom. The arrow keys also move the map. A right-click without dragging cancels your selection.</li>
     <li><b>Click your unit</b> (or anywhere in a province where you have units) to select it. Hover over where you want to go, then <b>left-click</b> to send it there. Right-click cancels. <kbd>Shift</kbd>, <kbd>Ctrl</kbd> or <kbd>⌘</kbd>-click adds (or removes) units, <kbd>Shift</kbd>-drag box-selects, <kbd>G</kbd> selects all your land units, and clicking the sea deselects.</li>
     <li><b>Group attacks:</b> send several units at one enemy tile and each one takes a different neighboring tile, so they all hit it at once.</li>
     <li><b>Capitals:</b> take a country's capital and the whole country becomes yours; its units are disbanded. Capitals defend at double strength and take three times as long to march into, so the AI (and you) have time to rush defenders there.</li>
@@ -735,7 +735,7 @@ canvas.addEventListener("pointermove", e => {
   if (down) {
     if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 10) down.moved = true;
     if (view.box) { view.box.x1 = e.clientX; view.box.y1 = e.clientY; view.dirty = true; }
-    else if (down.moved && down.btn === 0) { view.ox = down.ox + e.clientX - down.x; view.oy = down.oy + e.clientY - down.y; view.clamp(); view.dirty = true; }
+    else if (down.moved && (down.btn === 2 || down.btn === 1 || (down.btn === 0 && down.type === "touch"))) { view.ox = down.ox + e.clientX - down.x; view.oy = down.oy + e.clientY - down.y; view.clamp(); view.dirty = true; }
   } else if (e.pointerType !== "touch") {
     const p = view.provAt(e.clientX, e.clientY);
     view.mouse = [e.clientX, e.clientY];
@@ -769,16 +769,17 @@ canvas.addEventListener("pointerup", e => {
       showDivInfo(); view.dirty = true; return;
     }
   }
-  if (d.moved) return;
-  if (d.btn === 2) return;
+  if (d.btn === 2) {
+    if (d.moved) return;
+    if (view.buildMode) { setBuildMode(null); return; }
+    if (view.selected.size) { view.selected.clear(); view.preview = null; $("info").classList.add("hidden"); view.dirty = true; updateMoveHint(); }
+    return;
+  }
+  if (d.btn === 1) return;
+  if (d.moved && d.type === "touch") return;
   handleClick(e.clientX, e.clientY, d.shift, d.type);
 });
-canvas.addEventListener("contextmenu", e => {
-  e.preventDefault();
-  if (!game) return;
-  if (view.buildMode) { setBuildMode(null); return; }
-  if (view.selected.size) { view.selected.clear(); view.preview = null; $("info").classList.add("hidden"); view.dirty = true; updateMoveHint(); }
-});
+canvas.addEventListener("contextmenu", e => e.preventDefault());
 canvas.addEventListener("wheel", e => { e.preventDefault(); view.zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
 
 function handleClick(x, y, shift, ptype) {
